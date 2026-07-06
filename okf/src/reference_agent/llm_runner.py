@@ -6,6 +6,15 @@
   - 通义千问:    LLM_PROVIDER=qwen      LLM_API_KEY=sk-xxx
   - OpenAI:      LLM_PROVIDER=openai    LLM_API_KEY=sk-xxx
   - 自定义:      LLM_PROVIDER=custom    LLM_API_KEY=xxx  LLM_BASE_URL=http://...
+
+前置产物（输入）：
+  - system_prompt: str       — LLM 的角色和任务指令（从 prompts/*.md 加载）
+  - tools: list[Callable]    — 允许 LLM 调用的 Python 函数列表
+  - user_message: str        — 具体的任务描述（"处理 concept_id: syntax/arrow_function"）
+
+后置产物（输出）：
+  - 返回值 str               — LLM 最后一轮的文字确认（通常可忽略）
+  - 副作用（真正的产出）      — tools 中的 write_concept_doc 被调用，在磁盘写入/更新 .md 文件
 """
 from __future__ import annotations
 
@@ -34,6 +43,26 @@ _PROVIDERS: dict[str, dict[str, str]] = {
         "default_model": "gpt-4o-mini",
     },
 }
+
+# ── dict 类型参数的通用约束描述（可被外部覆盖，见 OBJECT_PARAM_HINTS）────────
+
+# 当工具函数的某个参数类型是 dict/object 时，
+# 这里可以为特定参数名注入补充说明，指导 LLM 传正确格式。
+# key = 参数名, value = 额外 description 字符串
+# 如需针对新工具的新参数添加提示，在此处扩展即可，无需修改核心逻辑。
+OBJECT_PARAM_HINTS: dict[str, str] = {
+    "frontmatter": (
+        "MUST be a JSON object (not a string, not YAML text). "
+        "Required keys: type (string), title (string), description (string). "
+        "Optional: resource (string), tags (array of strings). "
+        'Example: {"type": "SQLite Table", "title": "Users", '
+        '"description": "One row per registered user."}'
+    ),
+}
+
+# ── 字符串强制转 dict 的参数名集合（遇到这些参数被传成字符串时自动修正）──────
+# 原先只处理 "frontmatter"，现在改成可配置集合
+COERCE_TO_DICT_PARAMS: frozenset[str] = frozenset({"frontmatter"})
 
 
 def _build_client() -> tuple[OpenAI, str]:
@@ -85,10 +114,19 @@ def _is_list_annotation(annotation: Any) -> bool:
     return False
 
 
-def _make_tool_schema(fn: Callable) -> dict[str, Any]:
-    """把普通 Python 函数转成 OpenAI function-calling 的 schema。"""
+def _make_tool_schema(
+    fn: Callable,
+    object_param_hints: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """把普通 Python 函数转成 OpenAI function-calling 的 schema。
+
+    object_param_hints: 额外的参数描述，key=参数名，value=description 字符串。
+    默认使用模块级 OBJECT_PARAM_HINTS，可在调用时覆盖。
+    """
     import inspect
     import re
+
+    hints = OBJECT_PARAM_HINTS if object_param_hints is None else object_param_hints
 
     sig = inspect.signature(fn)
     doc = (fn.__doc__ or "").strip()
@@ -116,15 +154,9 @@ def _make_tool_schema(fn: Callable) -> dict[str, Any]:
             ptype = "string"
 
         prop: dict[str, Any] = {"type": ptype}
-        # 给 frontmatter 参数添加额外说明，明确要求传 JSON object 而非字符串
-        if name == "frontmatter" and ptype == "object":
-            prop["description"] = (
-                "MUST be a JSON object (not a string, not YAML text). "
-                "Required keys: type (string), title (string), description (string). "
-                "Optional: resource (string), tags (array of strings). "
-                'Example: {"type": "SQLite Table", "title": "Users", '
-                '"description": "One row per registered user."}'
-            )
+        # 对 object 类型参数注入补充说明（从 hints 查找，不再写死参数名）
+        if ptype == "object" and name in hints:
+            prop["description"] = hints[name]
             prop["additionalProperties"] = True
         properties[name] = prop
         if param.default is inspect.Parameter.empty:
@@ -148,24 +180,56 @@ class ToolCallRunner:
     """
     单轮 ReAct 循环：发消息 → LLM 返回 tool_calls → 执行工具 → 反馈结果 → 循环。
     直到 LLM 不再调用工具为止。
+
+    前置产物（实例化所需）：
+      system_prompt  — 从 prompts/*.md 文件读取的系统指令
+      tools          — Python 函数列表（bundle_tools + source_tools 里的函数）
+
+    run() 的前后产物：
+      输入: user_message  — 任务描述字符串，如 "Enrich concept: syntax/arrow_function"
+      输出: str           — LLM 最终的文字确认（通常可忽略）
+      副作用:             — tools 里的 write_concept_doc 被 LLM 主动调用，写入磁盘 .md 文件
     """
 
-    MAX_ROUNDS = 40  # 防止死循环
+    DEFAULT_MAX_ROUNDS = 40  # 默认最大轮次，防止死循环
 
-    def __init__(self, system_prompt: str, tools: list[Callable]):
+    def __init__(
+        self,
+        system_prompt: str,
+        tools: list[Callable],
+        max_rounds: int | None = None,
+        object_param_hints: dict[str, str] | None = None,
+        coerce_to_dict_params: frozenset[str] | None = None,
+    ):
+        """
+        参数：
+          system_prompt        — LLM 系统提示词
+          tools                — 允许 LLM 调用的 Python 函数列表
+          max_rounds           — 最大工具调用轮次（默认 DEFAULT_MAX_ROUNDS=40）
+          object_param_hints   — 覆盖 OBJECT_PARAM_HINTS，为 object 类型参数注入额外描述
+          coerce_to_dict_params — 覆盖 COERCE_TO_DICT_PARAMS，指定哪些参数被传成字符串时自动修正
+        """
         self._client, self._model = _build_client()
         self._system_prompt = system_prompt
         self._tools = {fn.__name__: fn for fn in tools}
-        self._schemas = [_make_tool_schema(fn) for fn in tools]
+        self._schemas = [_make_tool_schema(fn, object_param_hints) for fn in tools]
+        self._max_rounds = max_rounds if max_rounds is not None else self.DEFAULT_MAX_ROUNDS
+        self._coerce_params = coerce_to_dict_params if coerce_to_dict_params is not None else COERCE_TO_DICT_PARAMS
 
     def run(self, user_message: str) -> str:
-        """运行一次完整的 tool-call 循环，返回最终文本回复。"""
+        """运行一次完整的 tool-call 循环，返回最终文本回复。
+
+        前置产物: user_message（任务描述）
+        后置产物:
+          - 返回值 str：LLM 最后一轮的确认文字（通常可忽略）
+          - 副作用：write_concept_doc 等工具函数执行时在磁盘写入/更新 .md 文件
+        """
         messages: list[dict] = [
             {"role": "system", "content": self._system_prompt},
             {"role": "user", "content": user_message},
         ]
 
-        for round_idx in range(self.MAX_ROUNDS):
+        for round_idx in range(self._max_rounds):
             log.debug("[LLM] round %d, messages=%d", round_idx, len(messages))
             response = self._client.chat.completions.create(
                 model=self._model,
@@ -199,9 +263,10 @@ class ToolCallRunner:
                     result = {"error": f"unknown tool: {fn_name}"}
                 else:
                     try:
-                        # 兼容处理：如果 frontmatter 被传成了字符串，自动解析成 dict
-                        if "frontmatter" in kwargs and isinstance(kwargs["frontmatter"], str):
-                            kwargs["frontmatter"] = _coerce_frontmatter(kwargs["frontmatter"])
+                        # 兼容处理：对 _coerce_params 中声明的参数，若被传成字符串则自动修正
+                        for param_name in self._coerce_params:
+                            if param_name in kwargs and isinstance(kwargs[param_name], str):
+                                kwargs[param_name] = _coerce_frontmatter(kwargs[param_name])
                         result = fn(**kwargs)
                     except Exception as exc:
                         result = {"error": str(exc)}
@@ -213,7 +278,7 @@ class ToolCallRunner:
                     "content": json.dumps(result, ensure_ascii=False, default=str),
                 })
 
-        log.warning("[LLM] MAX_ROUNDS=%d reached, stopping", self.MAX_ROUNDS)
+        log.warning("[LLM] max_rounds=%d reached, stopping", self._max_rounds)
         return ""
 
 
