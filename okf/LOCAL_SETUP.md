@@ -655,212 +655,379 @@ timestamp: '2026-07-05T14:26:11+00:00'  # 自动填充
 
 ---
 
-## 6. Python 脚本功能说明
+## 6. 新增 Python 文件详解：与原工程的对比
 
-这一节把每个新增 Python 文件的"它做了什么"讲清楚，不涉及内部实现细节。
+> 理解新增文件最好的方式是和原工程的对应文件**并排对比**，看清楚替换了什么、为什么要替换。
 
-### 6.1 `llm_runner.py` — LLM 驱动引擎
+### 6.1 整体替换关系一览
 
-**职责**：连接 LLM API，驱动工具调用循环，直到任务完成。
+```
+原工程文件                         新增文件                     替换原因
+─────────────────────────────────────────────────────────────────────────
+agent.py          ──────────────► (无直接对应)                 ┐
+runner.py         ──────────────► local_runner.py             ├ 替换整个
+                                  llm_runner.py               │ google-adk
+cli.py            ──────────────► js_main.py                  │ 驱动层
+                                  local_main.py               ┘
 
-**它做的事**：
-1. 读取环境变量（`LLM_PROVIDER` / `LLM_API_KEY`）决定连接哪个 API
-2. 把传入的 Python 函数列表自动转成 OpenAI Function Calling 格式的 JSON Schema
-3. 开始循环：发消息 → 等 LLM 回复 → 如果有 tool_calls 就执行对应 Python 函数 → 把结果反馈给 LLM → 重复
-4. 直到 LLM 不再调用工具，把最终文字回复返回给调用方
-5. 有容错处理：如果 LLM 把 `frontmatter` 传成字符串而非 JSON 对象，自动解析修正
+sources/bigquery.py ────────────► sources/sqlite.py           替换数据源
+                                  sources/js_syntax.py        （新增类型）
 
-**关键限制**：
-- `MAX_ROUNDS = 40`：最多循环 40 轮，防止 LLM 陷入死循环
-- 超过 40 轮后强制停止，返回空字符串并记录警告日志
+（tools/ bundle/ viewer/ 全部不变，一行未动）
+```
 
-**支持的提供商**：
+---
 
-| 环境变量值 | 连接地址 | 默认模型 |
+### 6.2 `llm_runner.py` — 替换 `agent.py` + `runner.py`
+
+#### 原工程怎么驱动 LLM
+
+原工程用 Google 的 **`google-adk`** 框架（`agent.py` + `runner.py`）：
+
+```python
+# agent.py（原工程）
+from google.adk import Agent
+from google.adk.tools import FunctionTool
+
+def build_bq_agent(model="gemini-flash-latest") -> Agent:
+    return Agent(
+        name="okf_bq_reference_agent",
+        model=model,                          # ← 只支持 Gemini 模型名
+        instruction=_load_prompt("reference_instruction.md"),
+        tools=[
+            FunctionTool(list_concepts),      # ← google-adk 专有的包装方式
+            FunctionTool(read_concept_raw),
+            FunctionTool(sample_rows),
+            FunctionTool(read_existing_doc),
+            FunctionTool(write_concept_doc),
+        ],
+    )
+
+# runner.py（原工程）
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+class ReferenceRunner:
+    def __init__(self, source, bundle_root, model="gemini-flash-latest", ...):
+        self._bq_agent = build_bq_agent(model=model)
+        self._bq_session_service = InMemorySessionService()    # ← google-adk 会话管理
+        self._bq_runner = Runner(
+            agent=self._bq_agent,
+            app_name="reference_agent_bq",
+            session_service=self._bq_session_service,
+        )
+
+    def enrich_concept(self, ref):
+        session_id = f"enrich-{uuid.uuid4().hex[:12]}"
+        self._bq_session_service.create_session_sync(...)     # ← google-adk 会话机制
+        message = types.Content(role="user", parts=[types.Part(text=...)])  # ← Google 私有类型
+        for event in self._bq_runner.run(...):                # ← google-adk event stream
+            _log_event_parts(event, ...)
+```
+
+**问题**：`google.adk`、`google.genai`、`InMemorySessionService`、`FunctionTool` 全是 Google 私有包，只能配合 Gemini 使用，且国内无法访问 Gemini API。
+
+#### `llm_runner.py` 怎么替换它
+
+用标准 `openai` Python SDK 重新实现相同的逻辑：
+
+```python
+# llm_runner.py（新增）
+from openai import OpenAI                                      # ← 标准 SDK，兼容所有国产 LLM
+
+class ToolCallRunner:
+    def __init__(self, system_prompt: str, tools: list[Callable]):
+        self._client, self._model = _build_client()           # ← 读环境变量，支持 DeepSeek/Qwen
+        self._tools = {fn.__name__: fn for fn in tools}
+        self._schemas = [_make_tool_schema(fn) for fn in tools]  # ← 自动转 JSON Schema
+
+    def run(self, user_message: str) -> str:
+        messages = [{"role": "system", ...}, {"role": "user", ...}]
+        for round_idx in range(self.MAX_ROUNDS):              # ← 简单循环代替 event stream
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                tools=self._schemas,
+                tool_choice="auto",
+            )
+            tool_calls = response.choices[0].message.tool_calls
+            if not tool_calls:
+                return response.choices[0].message.content    # ← 无工具调用即完成
+            for tc in tool_calls:
+                fn = self._tools[tc.function.name]
+                result = fn(**json.loads(tc.function.arguments))  # ← 直接调用 Python 函数
+                messages.append({"role": "tool", "content": json.dumps(result)})
+```
+
+**关键差异对比**：
+
+| 维度 | 原工程 `runner.py` | 新增 `llm_runner.py` |
 |---|---|---|
-| `deepseek` | `api.deepseek.com` | `deepseek-chat` |
-| `qwen` | `dashscope.aliyuncs.com` | `qwen-plus` |
-| `openai` | `api.openai.com` | `gpt-4o-mini` |
-| `custom` | 由 `LLM_BASE_URL` 指定 | 由 `LLM_MODEL` 指定 |
+| LLM SDK | `google.adk` + `google.genai` | `openai`（标准，兼容所有） |
+| 支持的模型 | 只有 Gemini | DeepSeek / Qwen / OpenAI / 任意兼容接口 |
+| 工具注册方式 | `FunctionTool(fn)` 包装 | 直接传函数，自动提取签名生成 Schema |
+| 会话管理 | `InMemorySessionService` | 简单 `messages` 列表（无状态） |
+| 事件处理 | `for event in runner.run()` event stream | 简单 `for round in range(MAX_ROUNDS)` 循环 |
+| 工具调用解析 | google-adk 内部处理 | 手动 `json.loads(tc.function.arguments)` |
+| 国内可用 | ❌（需要 Gemini API Key，国内无法访问） | ✅（DeepSeek/Qwen 国内均可直接访问） |
+| 额外容错 | 无 | `_coerce_frontmatter()`：自动修正 LLM 传错类型的参数 |
+
+**一句话总结**：`llm_runner.py` 是把 google-adk 的 `Agent` + `Runner` + `SessionService` 这整套机制，用 100 行标准代码重新实现了一遍，功能等价但不依赖任何 Google 包。
 
 ---
 
-### 6.2 `sources/js_syntax.py` — JS 语法知识域定义
+### 6.3 `local_runner.py` — 替换 `runner.py` 中的 `ReferenceRunner`
 
-**职责**：扮演"数据源"角色，告诉 Agent"这个知识库里有哪 20 个概念，每个概念的基本信息是什么"。
+#### 原工程 `ReferenceRunner` 做什么
 
-**它做的事**：
-1. 在文件顶部用一个 Python 列表（`_CONCEPTS`）定义 20 个 JS 概念，每条记录包含：
-   - `id`：路径元组，如 `("syntax", "arrow_function")`，决定最终写到哪个文件
-   - `type`：概念类型（`JS Syntax` / `JS Topic` / `JS Builtin` / `JS Pattern`）
-   - `title` / `description`：标题和一句话描述
-   - `hint`：给 LLM 的参考信息（关键词、相关概念、ES 版本、MDN 地址）
-2. 实现 `list_concepts()`：把 `_CONCEPTS` 列表转成 `ConceptRef` 对象列表返回
-3. 实现 `read_concept()`：根据 `ConceptRef` 查找对应记录，把元数据打包成字典返回给 LLM
+```python
+# runner.py（原工程）
+class ReferenceRunner:
+    def __init__(self, source, bundle_root, model="gemini-flash-latest",
+                 web_seeds=None, web_max_pages=100, web_allowed_hosts=None,
+                 web_allowed_path_prefixes=None, web_denied_path_substrings=None,
+                 web_max_depth=2, verbose=False):
+        # 初始化时就创建好 BQ Agent 和 Web Agent（各需要 google-adk）
+        self._bq_agent = build_bq_agent(model=model)
+        self._bq_runner = Runner(agent=self._bq_agent, ...)
+        if web_seeds:
+            self._web_agent = build_web_agent(model=model)
+            self._web_runner = Runner(agent=self._web_agent, ...)
 
-**注意**：这个文件本身不生成任何文档，它只是"知识目录"，告诉 Agent 有哪些东西要写。真正的文档由 LLM 根据这些元数据生成。
-
+    def enrich_all(self, only=None) -> int:
+        for ref in concepts:
+            self.enrich_concept(ref)
+        self.run_web_pass()
+        regenerate_indexes(self.bundle_root, model=self.model)  # ← 用 Gemini 生成目录描述
+        return count
 ```
-js_syntax.py 提供的元数据（种子）
-        │
-        ▼
-DeepSeek 根据种子自主撰写完整文档
-        │
-        ▼
-write_concept_doc() 写入磁盘
+
+注意最后一行：原工程的 `regenerate_indexes()` 还**额外调用了一次 Gemini** 来生成每个子目录的简要描述。
+
+#### `local_runner.py` 怎么替换它
+
+```python
+# local_runner.py（新增）
+class LocalRunner:
+    def __init__(self, source, bundle_root, web_seeds=None, web_max_pages=20):
+        # 不在初始化时创建 Runner，每个概念单独创建（隔离上下文）
+        self._bq_tools = [list_concepts, read_concept_raw, sample_rows,
+                          read_existing_doc, write_concept_doc]
+        self._web_tools = [..., fetch_url]
+
+    def enrich_concept(self, concept_id: str) -> None:
+        runner = ToolCallRunner(                               # ← 用新的 ToolCallRunner
+            system_prompt=_load_prompt("reference_instruction.md"),
+            tools=self._bq_tools,
+        )
+        runner.run(f"Enrich the concept with id: {concept_id}")
+
+    def enrich_all(self, only=None) -> int:
+        for ref in concepts:
+            self.enrich_concept(ref.id_str)
+        self.run_web_pass()
+        _regenerate_indexes_local(self.bundle_root)           # ← 纯 Python，不调用 LLM
+        return count
+
+def _regenerate_indexes_local(bundle_root):
+    # 扫描目录，读 frontmatter 的 title/description，拼 Markdown 列表
+    # 完全不依赖 LLM
+    ...
 ```
+
+**关键差异对比**：
+
+| 维度 | 原工程 `ReferenceRunner` | 新增 `LocalRunner` |
+|---|---|---|
+| 依赖 | `google.adk.runners.Runner` | `llm_runner.ToolCallRunner`（自实现） |
+| Agent 创建时机 | 初始化时全部创建（占内存） | 每个概念处理时动态创建 |
+| 上下文隔离 | google-adk 用 Session ID 隔离 | 每次 `new ToolCallRunner()` 自然隔离 |
+| index.md 生成 | `regenerate_indexes()` 额外调用 Gemini | `_regenerate_indexes_local()` 纯 Python，零 API 调用 |
+| Web Pass 限制参数 | 支持 `allowed_path_prefixes`、`denied_path_substrings`、`max_depth` 等精细控制 | 简化版，只控制 `max_pages` |
 
 ---
 
-### 6.3 `sources/sqlite.py` — SQLite 数据源
+### 6.4 `sources/sqlite.py` — 替换 `sources/bigquery.py`
 
-**职责**：读取本地 SQLite 数据库，把数据库结构转成 Agent 可消费的"概念"。
+#### 原工程 `BigQuerySource` 做什么
 
-**它做的事**：
-1. 连接指定的 `.db` 文件
-2. `list_concepts()`：
-   - 创建一个 `SQLite Database` 类型的概念（代表整个数据库）
-   - 查询 `sqlite_master` 表获取所有表名，每张表创建一个 `SQLite Table` 类型的概念
-   - 例：`demo.db` 含 5 张表 → 返回 6 个概念（1 个数据库 + 5 个表）
-3. `read_concept()`：
-   - 对于 Database 概念：返回数据库名、路径、表数量、表名列表
-   - 对于 Table 概念：执行 `PRAGMA table_info()` 返回所有列名/类型/约束，执行 `COUNT(*)` 返回行数，执行 `PRAGMA index_list()` 返回索引信息
-4. `sample_rows()`：对指定表执行 `SELECT * FROM table LIMIT n`，返回前 n 行样本数据
+```python
+# sources/bigquery.py（原工程）
+from google.cloud import bigquery
 
-**LLM 拿到这些信息后做什么**：根据列名（如 `user_id`, `email`, `created_at`）推断每列的业务含义，生成人类可读的表文档，说明这张表存什么数据、各列什么意思、典型使用场景。
+class BigQuerySource(Source):
+    def __init__(self, dataset: str, billing_project=None):
+        self.client = bigquery.Client(project=billing_project)   # ← 需要 GCP 认证
+        # dataset 必须是 "project.dataset" 格式
+
+    def list_concepts(self):
+        # 调用 BigQuery API 列出所有表
+        for tbl in self.client.list_tables(self._dataset_ref):
+            ...
+        # 额外处理：自动识别分片表（table_20230101, table_20230102...）
+        # 把同前缀的分片合并成一个 "table_*" 概念
+
+    def read_concept(self, ref):
+        tbl = self.client.get_table(...)                         # ← BigQuery API
+        return {
+            "num_rows": tbl.num_rows,
+            "num_bytes": tbl.num_bytes,
+            "time_partitioning": ...,
+            "clustering_fields": ...,
+            "schema": _schema_to_dict(tbl.schema),
+        }
+
+    def sample_rows(self, ref, n=5):
+        row_iter = self.client.list_rows(table_ref, max_results=n)  # ← BigQuery API
+        return [dict(r.items()) for r in row_iter]
+```
+
+**问题**：`google.cloud.bigquery` 需要 `GOOGLE_APPLICATION_CREDENTIALS` 环境变量认证，且数据存在 Google Cloud 上（不能用本地文件）。
+
+#### `sources/sqlite.py` 怎么替换它
+
+```python
+# sources/sqlite.py（新增）
+import sqlite3
+
+class SQLiteSource(Source):
+    def __init__(self, db_path: str):
+        self.db_path = Path(db_path)                           # ← 只需要本地文件路径
+
+    def list_concepts(self):
+        # 用标准 sqlite3 查询系统表
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+        # 每张表 → 一个 ConceptRef（无分片识别，SQLite 一般不需要）
+
+    def read_concept(self, ref):
+        columns = conn.execute(
+            f"PRAGMA table_info(`{table_name}`)"              # ← SQLite 内置命令
+        ).fetchall()
+        row_count = conn.execute(f"SELECT COUNT(*) FROM `{table_name}`").fetchone()[0]
+        indexes = conn.execute(f"PRAGMA index_list(`{table_name}`)").fetchall()
+        return {"schema": ..., "row_count": ..., "index_count": ...}
+
+    def sample_rows(self, ref, n=5):
+        rows = conn.execute(f"SELECT * FROM `{table_name}` LIMIT {n}").fetchall()
+        return [dict(row) for row in rows]
+```
+
+**关键差异对比**：
+
+| 维度 | 原工程 `BigQuerySource` | 新增 `SQLiteSource` |
+|---|---|---|
+| 依赖 | `google-cloud-bigquery`（需要 GCP 账号、API 认证） | Python 内置 `sqlite3`（零额外依赖） |
+| 数据位置 | Google Cloud 云端 | 本地 `.db` 文件 |
+| 认证方式 | `GOOGLE_APPLICATION_CREDENTIALS` 服务账号 | 无需认证 |
+| 分片表处理 | ✅ 自动识别并合并（BigQuery 场景常见） | ❌ 不需要（SQLite 无此概念） |
+| 额外元数据 | 分区字段、聚簇字段、存储大小（bytes） | 索引数量（通过 PRAGMA） |
+| 视图/物化视图 | ✅ 特殊处理（用 SQL 查询代替直接读取） | ❌ 暂不支持 |
 
 ---
 
-### 6.4 `local_runner.py` — 本地运行器（SQLite 场景）
+### 6.5 `sources/js_syntax.py` — 原工程没有对应文件（全新引入）
 
-**职责**：编排 SQLite 场景下的完整生成流程，是 `js_main.py` 同类但针对数据库场景的版本。
+原工程只有 `BigQuerySource` 一种数据源，数据必须来自真实数据库。
 
-**它做的事**：
-1. 初始化时：接收 `SQLiteSource`、输出目录、可选的 web seeds URL 列表
-2. 调用 `set_context(source, bundle_root)`：把数据源和输出路径注入全局上下文（原有工具函数依赖此）
-3. `enrich_all()` 方法：
-   - 调用 `source.list_concepts()` 获取所有概念
-   - 如果指定了 `only` 参数（概念 id 列表），则只处理指定的概念
-   - 逐个调用 `enrich_concept()`
-4. `enrich_concept()` 方法：
-   - 创建 `ToolCallRunner`，加载 `reference_instruction.md`（原始提示词）
-   - 工具集：`list_concepts` + `read_concept_raw` + `sample_rows` + `read_existing_doc` + `write_concept_doc`
-   - 发出任务消息，启动 LLM 循环
-5. `run_web_pass()` 方法（可选）：
-   - 加载 Web 增强提示词（`web_ingestion_instruction.md`）
-   - 工具集额外增加 `fetch_url`
-   - LLM 会自主抓取 seed URL，从网页提取信息补充到现有文档
-6. 流程结束后调用 `_regenerate_indexes_local()`：扫描所有 `.md`，为每个目录生成 `index.md`
+`js_syntax.py` 演示了一种全新用法：**用代码本身作为知识域定义**，无需任何外部数据库。
 
-**`_regenerate_indexes_local()` 函数单独说明**：
-不依赖 LLM，纯 Python 实现的 index 生成器。扫描每个目录下的 `.md` 文件，读取 frontmatter 里的 `title` 和 `description`，生成如下格式的 `index.md`：
-```markdown
-# syntax
+```python
+# sources/js_syntax.py（新增，无对应原工程文件）
+_CONCEPTS = [
+    {
+        "id": ("syntax", "arrow_function"),     # ← 直接在代码里写好概念目录
+        "type": "JS Syntax",
+        "title": "Arrow Functions",
+        "hint": {
+            "keywords": ["=>", "lexical this"],
+            "related": ["topics/functions"],    # ← 关系图的边来源
+            "mdn": "https://developer.mozilla.org/...",
+        }
+    },
+    # ... 20 个概念
+]
 
-* [Arrow Functions](arrow_function.md) - 箭头函数是 ES2015 引入的简洁函数语法
-* [async / await](async_await.md) - 基于 Promise 的语法糖
-* [Class Syntax](class.md) - 基于原型的 class 语法糖
+class JSSyntaxSource(Source):
+    def list_concepts(self):                    # ← 返回硬编码的列表，不查任何数据库
+        return [ConceptRef(id=tuple(c["id"]), ...) for c in _CONCEPTS]
+
+    def read_concept(self, ref):
+        return {"keywords": ..., "related_concepts": ..., "es_version": ...}
+
+    def sample_rows(self, ref, n=5):
+        return None                              # ← JS 语法没有"数据行"，LLM 自己生成代码示例
 ```
+
+**这说明了什么**：只要实现 `Source` 接口的三个方法，任何东西都能成为知识源——数据库、API 响应、代码注释、文档大纲，甚至是一个 JSON 文件。`js_syntax.py` 是这个思路最直接的演示。
 
 ---
 
-### 6.5 `js_main.py` — JS 知识库 CLI 入口
+### 6.6 `js_main.py` 和 `local_main.py` — 替换 `cli.py`
 
-**职责**：命令行程序，是整个 JS 知识库生成流程的启动点。
+#### 原工程 `cli.py` 做什么
 
-**它做的事**（顺序执行）：
+```python
+# cli.py（原工程）
+from reference_agent.sources.bigquery import BigQuerySource   # ← 硬绑定 BigQuery
+from reference_agent.runner import ReferenceRunner            # ← 硬绑定 google-adk
 
-```
-python -m reference_agent.js_main --visualize
-         │
-         ├── 1. 解析命令行参数（--concept / --out / --visualize / -v）
-         │
-         ├── 2. 创建 JSSyntaxSource()（20 个 JS 概念的目录）
-         │
-         ├── 3. set_context(source, bundle_root)
-         │      把数据源和输出路径注入全局，所有工具函数均可访问
-         │
-         ├── 4. 读取 js_instruction.md 作为系统提示词
-         │
-         ├── 5. for 循环处理每个概念：
-         │      创建 ToolCallRunner → runner.run(任务消息) → 等待完成
-         │      进度: [1/20] [2/20] ... [20/20]
-         │
-         ├── 6. _regenerate_indexes_local(bundle_root)
-         │      为每个子目录生成 index.md
-         │
-         └── 7. 如果 --visualize：
-                generate_visualization() → 写 viz.html
-                open viz.html（macOS 自动打开浏览器）
+def main():
+    # 只有 bq 一种数据源可选
+    if args.source == "bq":
+        source = BigQuerySource(dataset=args.dataset,
+                                billing_project=args.billing_project)
+    runner = ReferenceRunner(
+        source=source,
+        model=args.model,                                      # ← 必须是 Gemini 模型名
+        web_seeds=..., web_max_pages=..., ...
+    )
+    runner.enrich_all()
 ```
 
-**关键设计**：每个概念使用**独立的 `ToolCallRunner` 实例**，每次对话历史相互隔离，避免上一个概念的上下文污染下一个概念的生成。
+原工程的 `cli.py` 只支持一个 `enrich` 子命令，且数据源只有 `--source bq` 一种选项。
+
+#### 新增的两个入口做什么
+
+```
+cli.py（原工程）               js_main.py（新增）            local_main.py（新增）
+─────────────────────         ──────────────────────         ──────────────────────────
+--source bq                   （无需指定数据源，               --db path/to.db
+--dataset project.dataset      固定用 JSSyntaxSource）        （或自动创建 demo.db）
+--billing-project xxx
+--model gemini-flash-latest   （固定用环境变量 LLM_PROVIDER）  （固定用环境变量 LLM_PROVIDER）
+--web-seed URL                （不支持 web pass，JS            --no-web 可跳过 web pass
+--web-allowed-host HOST        语法不需要）
+--web-max-depth 2
+--web-allowed-path-prefix /
+--web-denied-path-substring /login
+```
+
+**两个新入口都做了 `cli.py` 没有的一件事**：
+
+`local_main.py` 内置了 `_ensure_demo_db()` 函数，**无需任何外部准备就能运行**。一行命令完成：创建数据库 → 读表结构 → 调 LLM → 生成文档 → 展示图谱。原工程没有这个，必须先有 BigQuery 数据集才能跑。
 
 ---
 
-### 6.6 `local_main.py` — SQLite 知识库 CLI 入口
+### 6.7 哪些原工程文件完全没动
 
-**职责**：命令行程序，SQLite 数据库场景的启动点，是 `js_main.py` 的"数据库版本"。
+以下文件**一行代码都没有修改**，直接复用：
 
-**它做的事**（顺序执行）：
+| 文件 | 作用 | 为什么可以不改 |
+|---|---|---|
+| `tools/bundle_tools.py` | `read_existing_doc`、`write_concept_doc` | 只操作本地文件系统，无 LLM/Cloud 依赖 |
+| `tools/source_tools.py` | `list_concepts`、`read_concept_raw`、`sample_rows` | 只调用 `Source` 接口，接口不变则不需改 |
+| `tools/context.py` | 全局 context 注入 | 与 LLM 无关，纯 Python 数据结构 |
+| `tools/web_tools.py` | `fetch_url` | 只用 `requests`/`markdownify`，无 Google 依赖 |
+| `bundle/document.py` | `OKFDocument` 解析/序列化 | 纯文件格式处理 |
+| `bundle/index.py` | `regenerate_indexes`（原版） | 原版依赖 Gemini，但我们用了新的简化版代替 |
+| `bundle/paths.py` | concept_id ↔ 文件路径转换 | 纯字符串/路径操作 |
+| `viewer/generator.py` | viz.html 生成 | 只读 `.md` 文件，无 LLM 依赖 |
+| `sources/base.py` | `Source` 抽象基类 | 接口定义，不需要改 |
 
-```
-python -m reference_agent.local_main --db mydb.db --visualize
-         │
-         ├── 1. 解析命令行参数（--db / --out / --concept / --no-web / --visualize）
-         │
-         ├── 2. 如果没有指定 --db：
-         │      _ensure_demo_db() 自动创建 demo.db
-         │      内含电商场景 5 张表：users / products / orders / order_items / events
-         │      并插入 3 条用户、5 种商品、3 笔订单、5 个行为事件的样本数据
-         │
-         ├── 3. 创建 SQLiteSource(db_path)
-         │
-         ├── 4. 创建 LocalRunner(source, bundle_root, web_seeds)
-         │      · web_seeds 默认为 None（跳过 Web Pass，避免访问外网）
-         │      · --no-web 参数同样跳过 Web Pass
-         │
-         ├── 5. runner.enrich_all(only=args.concept)
-         │      内部依次：BQ Pass → Web Pass（可选）→ 生成 index.md
-         │
-         └── 6. 如果 --visualize：
-                generate_visualization() → 写 viz.html
-                open viz.html（macOS 自动打开浏览器）
-```
-
-**`_ensure_demo_db()` 函数**：如果 `demo.db` 不存在，自动创建包含完整电商业务数据的 SQLite 数据库，用于演示和测试，无需任何外部数据。
-
----
-
-### 6.7 各脚本的关系总览
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                       你运行的命令                              │
-│                                                                │
-│  js_main.py              local_main.py                        │
-│  (JS 知识库入口)           (SQLite 知识库入口)                  │
-│       │                        │                              │
-│       │                        ▼                              │
-│       │               local_runner.py                         │
-│       │               (流程编排器)                             │
-│       │                        │                              │
-│       └────────────┬───────────┘                              │
-│                    ▼                                          │
-│             llm_runner.py                                     │
-│             (LLM 驱动引擎)                                     │
-│                    │  工具调用                                 │
-│             ┌──────┴──────────────────┐                       │
-│             ▼                        ▼                        │
-│    bundle_tools.py            source_tools.py                 │
-│    (读/写 .md 文件)            (读数据源元数据)                  │
-│             │                        │                        │
-│             ▼                        ▼                        │
-│    OKFDocument.parse/         js_syntax.py                    │
-│    serialize                  sqlite.py                       │
-│    (文件格式解析)               (数据源实现)                    │
-└────────────────────────────────────────────────────────────────┘
-```
+**结论**：改造只涉及最外面的两层（LLM 驱动层 + 数据源层），中间的工具函数层和文件格式层完全透明，这也是整个 OKF 架构设计最合理的地方。
 
 ---
 
