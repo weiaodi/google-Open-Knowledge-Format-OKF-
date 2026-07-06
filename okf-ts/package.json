@@ -1,0 +1,22 @@
+{
+  "name": "okf-ts",
+  "version": "0.1.0",
+  "description": "OKF Knowledge Graph Generator — TypeScript implementation",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx --watch src/main.ts",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "js-yaml": "^4.1.0",
+    "openai": "^4.67.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
