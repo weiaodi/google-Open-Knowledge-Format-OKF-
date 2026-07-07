@@ -18,7 +18,21 @@ interface GraphState {
 
   // ── View ──────────────────────────────────────────────────────
   activeView: ActiveView
-  docNodeId:  string | null   // which node's doc page to show
+  docNodeId:  string | null
+
+  // ── Timeline snapshot ─────────────────────────────────────────
+  timelineYear: number | null   // null = show all
+  setTimelineYear: (year: number | null) => void
+
+  // ── Gravity field ─────────────────────────────────────────────
+  gravityEnabled: boolean
+  toggleGravity: () => void
+
+  // ── Learning path ─────────────────────────────────────────────
+  learningPath: string[]         // ordered node ids
+  learningTarget: string | null
+  setLearningTarget: (id: string | null) => void
+  buildLearningPath: (targetId: string) => void
 
   // ── Actions ───────────────────────────────────────────────────
   selectNode:   (id: string | null) => void
@@ -32,6 +46,34 @@ interface GraphState {
   visibleLinks: () => KGLink[]
   connectedIds: (id: string) => Set<string>
   connectedLinks:(id: string) => KGLink[]
+}
+
+// ── Topological sort helpers ──────────────────────────────────────────────────
+/** Build prereq path to reach targetId via depends-on / syntactic-sugar edges */
+function buildPath(targetId: string, nodes: KGNode[], links: KGLink[]): string[] {
+  // Build reverse adjacency: dependencies of each node
+  const deps: Record<string, string[]> = {}
+  nodes.forEach(n => { deps[n.id] = [] })
+  links.forEach(l => {
+    if (l.type === 'depends-on' || l.type === 'syntactic-sugar') {
+      deps[l.source] = [...(deps[l.source] || []), l.target]
+    }
+  })
+
+  // BFS from target following deps
+  const visited = new Set<string>()
+  const queue = [targetId]
+  const order: string[] = []
+  while (queue.length) {
+    const cur = queue.shift()!
+    if (visited.has(cur)) continue
+    visited.add(cur)
+    order.unshift(cur) // prereqs come first
+    ;(deps[cur] || []).forEach(d => { if (!visited.has(d)) queue.push(d) })
+  }
+  // Ensure target is last
+  const filtered = order.filter(id => id !== targetId)
+  return [...filtered, targetId]
 }
 
 export const useGraphStore = create<GraphState>((set, get) => ({
@@ -50,6 +92,27 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   activeView: 'graph',
   docNodeId:  null,
 
+  // ── Timeline ──────────────────────────────────────────────────
+  timelineYear: null,
+  setTimelineYear: (year) => set({ timelineYear: year }),
+
+  // ── Gravity ───────────────────────────────────────────────────
+  gravityEnabled: true,
+  toggleGravity: () => set(s => ({ gravityEnabled: !s.gravityEnabled })),
+
+  // ── Learning path ─────────────────────────────────────────────
+  learningPath: [],
+  learningTarget: null,
+  setLearningTarget: (id) => {
+    if (!id) { set({ learningTarget: null, learningPath: [] }); return }
+    get().buildLearningPath(id)
+  },
+  buildLearningPath: (targetId) => {
+    const { nodes, links } = get()
+    const path = buildPath(targetId, nodes, links)
+    set({ learningTarget: targetId, learningPath: path })
+  },
+
   // ── Actions ───────────────────────────────────────────────────
   selectNode: (id) => set({ selectedNodeId: id }),
   hoverNode:  (id) => set({ hoveredNodeId: id }),
@@ -60,13 +123,15 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     })),
 
   openDoc: (id) => set({ activeView: 'doc', docNodeId: id }),
-
   backToGraph: () => set({ activeView: 'graph', docNodeId: null }),
 
   // ── Derived ───────────────────────────────────────────────────
   visibleNodes: () => {
-    const { nodes, filterTypes } = get()
-    return nodes.filter(n => filterTypes[n.type])
+    const { nodes, filterTypes, timelineYear } = get()
+    return nodes.filter(n =>
+      filterTypes[n.type] &&
+      (timelineYear === null || n.year <= timelineYear)
+    )
   },
 
   visibleLinks: () => {
@@ -75,7 +140,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return links.filter(l => visSet.has(l.source) && visSet.has(l.target))
   },
 
-  /** IDs of the selected node + its direct neighbours */
   connectedIds: (id) => {
     const { links } = get()
     const ids = new Set([id])
@@ -86,7 +150,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return ids
   },
 
-  /** Links that touch the given node id */
   connectedLinks: (id) => {
     const { links } = get()
     return links.filter(l => l.source === id || l.target === id)

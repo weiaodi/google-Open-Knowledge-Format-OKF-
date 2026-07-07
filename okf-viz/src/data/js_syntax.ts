@@ -32,6 +32,8 @@ export interface KGNode {
   type: NodeType
   color: string
   reads: number          // 阅读次数（热度）
+  year: number           // ES 规范加入年份（用于时间轴快照）
+  learnMins: number      // 预估学习分钟数（学习路径用）
   resource: string
   description: string
   tags: string[]
@@ -69,6 +71,8 @@ export const NODES: KGNode[] = [
     id: 'async_await', label: 'async / await',
     type: 'JS Syntax', color: TYPE_COLOR['JS Syntax'],
     reads: 2140,
+    year: 2017,
+    learnMins: 45,
     resource: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function',
     description: '基于 Promise 的语法糖，让异步代码看起来像同步代码，避免回调地狱。ES2017 引入。',
     tags: ['async function', 'await', 'try/catch', 'Promise', 'ES2017', 'error handling'],
@@ -94,6 +98,8 @@ export const NODES: KGNode[] = [
     id: 'promise', label: 'Promise',
     type: 'JS Builtin', color: TYPE_COLOR['JS Builtin'],
     reads: 1580,
+    year: 2015,
+    learnMins: 60,
     resource: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise',
     description: '表示异步操作最终完成或失败的对象，提供链式调用的标准化异步编程模型（ES6 状态机）。',
     tags: ['ES6', 'resolve', 'reject', 'then', 'catch', 'Promise.all', 'Promise.allSettled', '微任务'],
@@ -118,6 +124,8 @@ export const NODES: KGNode[] = [
     id: 'arrow_function', label: 'Arrow Functions',
     type: 'JS Syntax', color: TYPE_COLOR['JS Syntax'],
     reads: 980,
+    year: 2015,
+    learnMins: 30,
     resource: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions',
     description: 'ES2015 引入的简洁函数语法，提供词法 this 绑定，不可用作构造函数。',
     tags: ['=>', 'lexical this', 'implicit return', 'ES6', 'callback', 'concise body'],
@@ -141,6 +149,8 @@ export const NODES: KGNode[] = [
     id: 'closure', label: 'Closure',
     type: 'JS Pattern', color: TYPE_COLOR['JS Pattern'],
     reads: 1230,
+    year: 2009,
+    learnMins: 90,
     resource: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Closures',
     description: '函数与其词法环境的组合，用于数据封装和状态保持。JavaScript 最核心特性之一。',
     tags: ['lexical scope', 'encapsulation', 'factory function', 'module pattern', 'memoization'],
@@ -163,6 +173,8 @@ export const NODES: KGNode[] = [
     id: 'async_fn_node', label: 'async function',
     type: 'JS Syntax', color: TYPE_COLOR['JS Syntax'],
     reads: 760,
+    year: 2017,
+    learnMins: 20,
     resource: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function',
     description: 'async 关键字声明异步函数，内部可使用 await，总是返回一个 Promise 对象。',
     tags: ['async', 'ES2017', 'Promise', 'generator', 'return'],
@@ -184,6 +196,8 @@ export const NODES: KGNode[] = [
     id: 'destructuring', label: 'Destructuring',
     type: 'JS Syntax', color: TYPE_COLOR['JS Syntax'],
     reads: 870,
+    year: 2015,
+    learnMins: 35,
     resource: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment',
     description: '解构赋值：从数组或对象中提取值赋给变量，让代码更简洁易读（ES2015）。',
     tags: ['ES6', 'array', 'object', 'default values', 'rest', 'alias'],
@@ -205,6 +219,8 @@ export const NODES: KGNode[] = [
     id: 'let_const', label: 'let / const',
     type: 'JS Syntax', color: TYPE_COLOR['JS Syntax'],
     reads: 640,
+    year: 2015,
+    learnMins: 20,
     resource: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let',
     description: 'ES2015 块级作用域变量声明。const 不可重新赋值；let 可变，每次循环创建独立绑定。',
     tags: ['block scope', 'const', 'let', 'TDZ', 'ES6', 'hoisting'],

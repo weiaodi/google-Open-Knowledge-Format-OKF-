@@ -1,0 +1,198 @@
+/* ── Floating card ──────────────────────────────────────────────────────── */
+.card {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  width: 152px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+  user-select: none;
+  overflow: hidden;           /* critical: nothing escapes the card */
+}
+
+/* ── Trigger row (always visible) ───────────────────────────────────────── */
+.trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-text);
+  text-align: left;
+  transition: background .12s;
+}
+.trigger:hover { background: #f7f8fa; }
+
+.triggerIcon { font-size: 13px; flex-shrink: 0; }
+.triggerLabel { font-size: 11px; font-weight: 700; flex: 1; }
+
+/* Mini pills (collapsed state) */
+.miniPills {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.miniPill {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d1d5db;
+  transition: all .2s;
+  flex-shrink: 0;
+}
+.miniPillOn {
+  width: 8px;
+  height: 8px;
+}
+
+/* Active year badge */
+.triggerBadge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  border-radius: 8px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Chevron */
+.chevron {
+  font-size: 14px;
+  color: #c5cad5;
+  transition: transform .2s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.chevronUp { transform: rotate(-90deg); }
+
+/* ── Expanded section ───────────────────────────────────────────────────── */
+.headerRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 10px 4px;
+}
+
+.clearBtn {
+  font-size: 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #f2f3f5;
+  color: #4e5969;
+  cursor: pointer;
+  transition: background .12s;
+}
+.clearBtn:hover { background: #e5e6eb; }
+
+/* ── Vertical track ─────────────────────────────────────────────────────── */
+.trackWrap {
+  position: relative;
+  /* height = (stops-1) * gap; 4 stops, 40px gap each = 120px + padding */
+  height: 136px;
+  margin: 4px 0 6px;
+  padding: 8px 0;          /* top/bottom padding keeps dots inside */
+  box-sizing: border-box;
+}
+
+/* Background rail — from first stop center to last stop center */
+.rail {
+  position: absolute;
+  left: 16px;               /* align with dot center */
+  top: 8px;                 /* = trackWrap padding-top */
+  bottom: 8px;              /* = trackWrap padding-bottom */
+  width: 2px;
+  background: #e5e6eb;
+  border-radius: 1px;
+  z-index: 0;
+}
+
+/* Stop buttons */
+.stop {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 10px;
+  text-align: left;
+  z-index: 1;
+}
+
+/* First stop top = trackWrap padding */
+/* Last stop bottom = trackWrap padding */
+/* Achieved by calc on % within the inner height */
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dot-color, #c5cad5);
+  border: 2px solid white;
+  box-shadow: 0 0 0 1.5px var(--dot-color, #c5cad5);
+  flex-shrink: 0;
+  transition: all .2s;
+  position: relative;
+  z-index: 2;
+}
+
+.stop.current .dot {
+  transform: scale(1.28);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-color) 25%, transparent);
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1;
+}
+
+.year {
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: color .2s;
+}
+.stop.active .year      { color: #1f2329; }
+.stop:not(.active) .year { color: #c5cad5; }
+
+.spec {
+  font-size: 9.5px;
+  font-weight: 500;
+}
+.stop.active .spec      { color: var(--color-muted); }
+.stop:not(.active) .spec { color: #d1d5db; }
+
+.count { font-size: 9px; }
+.stop.active .count      { color: #9ca3af; }
+.stop:not(.active) .count { color: #d1d5db; }
+.stop.current .count {
+  color: var(--dot-color);
+  font-weight: 600;
+}
+
+/* ── Status bar ─────────────────────────────────────────────────────────── */
+.status {
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--color-border);
+  font-size: 10.5px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+.status b {
+  color: var(--color-primary);
+  font-weight: 700;
+}

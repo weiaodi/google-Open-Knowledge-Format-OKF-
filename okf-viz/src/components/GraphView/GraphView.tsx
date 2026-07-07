@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useCallback } from 'react'
 import * as d3 from 'd3'
 import { useGraphStore } from '@/store/graphStore'
 import { KGNode, KGLink, EDGE_TYPE_COLOR, EDGE_TYPE_LABEL } from '@/data/js_syntax'
+import Timeline from '@/components/Timeline/Timeline'
+import LearningPath from '@/components/LearningPath/LearningPath'
 import styles from './GraphView.module.css'
 
 // ─── Node sizing helpers ──────────────────────────────────────────────────────
@@ -25,7 +27,6 @@ function pulseAmpl(n: KGNode, maxReads: number)   { return 3 + (n.reads / maxRea
 
 // ─── D3 simulation node/link types ───────────────────────────────────────────
 interface SimNode extends KGNode { x: number; y: number; fx: number | null; fy: number | null }
-// SimLink: source/target are SimNode objects after D3 resolves IDs
 interface SimLink {
   source: SimNode
   target: SimNode
@@ -41,8 +42,11 @@ const GraphCanvas: React.FC = () => {
 
   const {
     visibleNodes, visibleLinks, selectedNodeId, connectedIds, connectedLinks,
-    selectNode, openDoc, nodes: allNodes, links: allLinks,
-    filterTypes, toggleFilter,
+    selectNode, hoverNode, hoveredNodeId, openDoc,
+    nodes: allNodes, links: allLinks,
+    filterTypes, toggleFilter, timelineYear,
+    gravityEnabled, toggleGravity,
+    learningPath,
   } = useGraphStore()
 
   // ── Bootstrap D3 (runs once) ─────────────────────────────────────────────
@@ -62,14 +66,12 @@ const GraphCanvas: React.FC = () => {
     // ── Defs ──────────────────────────────────────────────────────────────
     const defs = svg.append('defs')
 
-    // Arrowhead (default, grey)
     defs.append('marker')
       .attr('id', 'arr').attr('viewBox', '0 -4 8 8')
       .attr('refX', 4).attr('refY', 0)
       .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto')
       .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#d1d5db')
 
-    // Per-edge-type arrowheads (coloured, shown on selection)
     const edgeTypes = ['depends-on', 'syntactic-sugar', 'used-with', 'param-pattern', 'enables'] as const
     edgeTypes.forEach(et => {
       defs.append('marker')
@@ -79,7 +81,13 @@ const GraphCanvas: React.FC = () => {
         .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', EDGE_TYPE_COLOR[et])
     })
 
-    // Per-node glow filters
+    // Learning path arrow (gold)
+    defs.append('marker')
+      .attr('id', 'arr-path').attr('viewBox', '0 -4 8 8')
+      .attr('refX', 4).attr('refY', 0)
+      .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto')
+      .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#f59e0b')
+
     allNodes.forEach(n => {
       const sigma   = glowSigma(n, maxReads)
       const spread  = Math.ceil(sigma * 2.5)
@@ -95,7 +103,6 @@ const GraphCanvas: React.FC = () => {
       fm.append('feMergeNode').attr('in', 'SourceGraphic')
     })
 
-    // Selected glow
     const fs = defs.append('filter').attr('id', 'glow-sel')
       .attr('x', '-25%').attr('y', '-25%').attr('width', '150%').attr('height', '150%')
     fs.append('feGaussianBlur').attr('stdDeviation', 5).attr('result', 'blur')
@@ -104,6 +111,16 @@ const GraphCanvas: React.FC = () => {
     const fsm = fs.append('feMerge')
     fsm.append('feMergeNode').attr('in', 'glow')
     fsm.append('feMergeNode').attr('in', 'SourceGraphic')
+
+    // Path node glow (gold)
+    const fp = defs.append('filter').attr('id', 'glow-path')
+      .attr('x', '-25%').attr('y', '-25%').attr('width', '150%').attr('height', '150%')
+    fp.append('feGaussianBlur').attr('stdDeviation', 6).attr('result', 'blur')
+    fp.append('feFlood').attr('flood-color', '#f59e0b').attr('flood-opacity', .6).attr('result', 'color')
+    fp.append('feComposite').attr('in', 'color').attr('in2', 'blur').attr('operator', 'in').attr('result', 'glow')
+    const fpm = fp.append('feMerge')
+    fpm.append('feMergeNode').attr('in', 'glow')
+    fpm.append('feMergeNode').attr('in', 'SourceGraphic')
 
     // ── Simulation ────────────────────────────────────────────────────────
     const simNodes = allNodes.map(n => ({ ...n, x: W/2, y: H/2, fx: null, fy: null })) as SimNode[]
@@ -123,21 +140,18 @@ const GraphCanvas: React.FC = () => {
       .scaleExtent([.2, 3])
       .on('zoom', e => g.attr('transform', e.transform))
     svg.call(zoom)
-    svg.on('click.deselect', () => selectNode(null))
+    svg.on('click.deselect', () => { selectNode(null); hoverNode(null) })
 
     // ── Link layer ────────────────────────────────────────────────────────
     const linkG = g.append('g').attr('class', 'links')
-
     const linkGrp = linkG.selectAll<SVGGElement, SimLink>('g.link')
       .data(simLinks).enter().append('g').attr('class', 'link')
 
-    // Line
     linkGrp.append('line')
       .attr('class', 'link-line')
       .attr('stroke', '#d1d5db').attr('stroke-width', 1.4)
       .attr('marker-end', 'url(#arr)').attr('opacity', .6)
 
-    // Label (hidden by default)
     linkGrp.append('text')
       .attr('class', 'link-label')
       .attr('font-size', 10).attr('fill', '#9ca3af')
@@ -146,7 +160,6 @@ const GraphCanvas: React.FC = () => {
 
     // ── Node layer ────────────────────────────────────────────────────────
     const nodeG = g.append('g').attr('class', 'nodes')
-
     const nodeGrp = nodeG.selectAll<SVGGElement, SimNode>('g.node')
       .data(simNodes).enter().append('g').attr('class', 'node')
       .attr('cursor', 'pointer')
@@ -158,6 +171,8 @@ const GraphCanvas: React.FC = () => {
       )
       .on('click', (e, d) => { e.stopPropagation(); selectNode(d.id) })
       .on('dblclick', (e, d) => { e.stopPropagation(); openDoc(d.id) })
+      .on('mouseover', (_e, d) => { hoverNode(d.id) })
+      .on('mouseout',  () => { hoverNode(null) })
 
     // Pulse ring
     nodeGrp.append('rect')
@@ -191,10 +206,7 @@ const GraphCanvas: React.FC = () => {
       .attr('class', 'node-type')
       .attr('text-anchor', 'middle')
       .attr('y', n => -nodeHalfH(n, maxIn) / 2 + 4)
-      .attr('font-size', 9)
-      .attr('fill', n => n.color)
-      .attr('font-weight', '600')
-      .attr('opacity', .75)
+      .attr('font-size', 9).attr('fill', n => n.color).attr('font-weight', '600').attr('opacity', .75)
       .text(n => n.type)
 
     // Main label
@@ -213,6 +225,14 @@ const GraphCanvas: React.FC = () => {
       .attr('font-size', 9).attr('fill', '#9ca3af')
       .text(n => `📖 ${(n.reads / 1000).toFixed(1)}k`)
 
+    // Year badge (shown in timeline mode)
+    nodeGrp.append('text')
+      .attr('class', 'node-year')
+      .attr('text-anchor', 'middle')
+      .attr('y', n => -nodeHalfH(n, maxIn) + 10)
+      .attr('font-size', 8).attr('fill', '#b0b7c3').attr('opacity', 0)
+      .text(n => `ES${n.year}`)
+
     // ── Tick ──────────────────────────────────────────────────────────────
     sim.on('tick', () => {
       linkGrp.select<SVGLineElement>('.link-line')
@@ -223,99 +243,198 @@ const GraphCanvas: React.FC = () => {
         .attr('y', l => (l.source.y + l.target.y) / 2 - 6)
       nodeGrp.attr('transform', n => `translate(${n.x},${n.y})`)
 
-      // visibility
       const vn = new Set(visibleNodes().map(n => n.id))
       const vl = new Set(visibleLinks().map(l => `${l.source}->${l.target}`))
       nodeGrp.attr('display', n => vn.has(n.id) ? null : 'none')
       linkGrp.attr('display', l => vl.has(`${l.source.id}->${l.target.id}`) ? null : 'none')
     })
 
-    // ── Selection highlighting (driven by store) ──────────────────────────
-    // This effect is reactive — see the selection useEffect below
-    // Store a reference map for the selection updater
+    // Store meta reference
     ;(svgRef.current as unknown as Record<string, unknown>)['__d3meta'] = {
       linkGrp, nodeGrp, simNodes, simLinks, zoom, svg, maxIn,
     }
 
-    // resize
+    // Resize
     const ro = new ResizeObserver(() => {
-      const nw = canvas.clientWidth
-      const nh = canvas.clientHeight
+      const nw = canvas.clientWidth; const nh = canvas.clientHeight
       svg.attr('width', nw).attr('height', nh)
       sim.force('center', d3.forceCenter(nw / 2, nh / 2)).restart()
     })
     ro.observe(canvas)
 
-    return () => {
-      sim.stop()
-      ro.disconnect()
-      svg.selectAll('*').remove()
-    }
+    return () => { sim.stop(); ro.disconnect(); svg.selectAll('*').remove() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])  // intentionally run once
+  }, [])
 
-  // ── React to selectedNodeId changes ──────────────────────────────────────
+  // ── Selection highlight ───────────────────────────────────────────────────
   useEffect(() => {
-    const meta = (svgRef.current as unknown as Record<string, unknown>)?.['__d3meta'] as {
-      linkGrp: d3.Selection<SVGGElement, SimLink, SVGGElement, unknown>
-      nodeGrp: d3.Selection<SVGGElement, SimNode, SVGGElement, unknown>
-      maxIn: number
-    } | undefined
-
+    const meta = getMeta(svgRef)
     if (!meta) return
     const { linkGrp, nodeGrp } = meta
 
     if (!selectedNodeId) {
-      // Clear highlight
       nodeGrp.selectAll<SVGRectElement, SimNode>('.node-card')
         .attr('opacity', 1).attr('filter', n => `url(#glow-${n.id})`)
       linkGrp.select<SVGLineElement>('.link-line')
         .attr('opacity', .6).attr('stroke', '#d1d5db').attr('marker-end', 'url(#arr)')
-      linkGrp.select<SVGTextElement>('.link-label')
-        .attr('opacity', 0)
+      linkGrp.select<SVGTextElement>('.link-label').attr('opacity', 0)
       return
     }
 
-    const conn  = connectedIds(selectedNodeId)
+    const conn   = connectedIds(selectedNodeId)
     const cLinks = connectedLinks(selectedNodeId)
-    const cLinkSet = new Set(cLinks.map(l => `${l.source}->${l.target}`))
+    const cSet   = new Set(cLinks.map(l => `${l.source}->${l.target}`))
 
-    // Dim/highlight nodes
     nodeGrp.selectAll<SVGRectElement, SimNode>('.node-card')
       .attr('opacity', n => conn.has(n.id) ? 1 : .2)
       .attr('filter', n => n.id === selectedNodeId ? 'url(#glow-sel)' : `url(#glow-${n.id})`)
 
-    // Highlight connected links + show labels + coloured arrows
     linkGrp.select<SVGLineElement>('.link-line')
-      .attr('opacity', (l: SimLink) => cLinkSet.has(`${l.source.id}->${l.target.id}`) ? 1 : .08)
+      .attr('opacity', (l: SimLink) => cSet.has(`${l.source.id}->${l.target.id}`) ? 1 : .08)
       .attr('stroke', (l: SimLink) =>
-        cLinkSet.has(`${l.source.id}->${l.target.id}`) ? EDGE_TYPE_COLOR[l.type] : '#d1d5db')
+        cSet.has(`${l.source.id}->${l.target.id}`) ? EDGE_TYPE_COLOR[l.type] : '#d1d5db')
       .attr('stroke-width', (l: SimLink) =>
-        cLinkSet.has(`${l.source.id}->${l.target.id}`) ? 2 : 1.4)
+        cSet.has(`${l.source.id}->${l.target.id}`) ? 2 : 1.4)
       .attr('marker-end', (l: SimLink) =>
-        cLinkSet.has(`${l.source.id}->${l.target.id}`) ? `url(#arr-${l.type})` : 'url(#arr)')
+        cSet.has(`${l.source.id}->${l.target.id}`) ? `url(#arr-${l.type})` : 'url(#arr)')
 
     linkGrp.select<SVGTextElement>('.link-label')
-      .attr('opacity', (l: SimLink) => cLinkSet.has(`${l.source.id}->${l.target.id}`) ? 1 : 0)
+      .attr('opacity', (l: SimLink) => cSet.has(`${l.source.id}->${l.target.id}`) ? 1 : 0)
       .attr('fill', (l: SimLink) => EDGE_TYPE_COLOR[l.type])
-
   }, [selectedNodeId, connectedIds, connectedLinks])
 
-  // ── React to filterTypes ─────────────────────────────────────────────────
+  // ── Filter/timeline visibility ────────────────────────────────────────────
   useEffect(() => {
-    const meta = (svgRef.current as unknown as Record<string, unknown>)?.['__d3meta'] as {
-      nodeGrp: d3.Selection<SVGGElement, SimNode, SVGGElement, unknown>
-      linkGrp: d3.Selection<SVGGElement, SimLink, SVGGElement, unknown>
-    } | undefined
+    const meta = getMeta(svgRef)
+    if (!meta) return
+    const { nodeGrp, linkGrp } = meta
+    const vn = new Set(visibleNodes().map(n => n.id))
 
+    nodeGrp
+      .attr('display', (n: SimNode) => vn.has(n.id) ? null : 'none')
+      .transition().duration(300)
+      .attr('opacity', (n: SimNode) => vn.has(n.id) ? 1 : 0)
+
+    linkGrp.attr('display', (l: SimLink) =>
+      vn.has(l.source.id) && vn.has(l.target.id) ? null : 'none')
+
+    // Show year badge in timeline mode
+    nodeGrp.selectAll<SVGTextElement, SimNode>('.node-year')
+      .attr('opacity', timelineYear !== null ? .8 : 0)
+  }, [filterTypes, timelineYear, visibleNodes, visibleLinks])
+
+  // ── Gravity field (hover attraction) ─────────────────────────────────────
+  useEffect(() => {
+    const meta = getMeta(svgRef)
+    if (!meta) return
+    const sim = simRef.current
+    if (!sim || !gravityEnabled) return
+
+    if (!hoveredNodeId) {
+      // Remove custom gravity forces
+      sim.force('gravity-attract', null)
+      sim.force('gravity-repel', null)
+      sim.alpha(.3).restart()
+      return
+    }
+
+    // Compute connected set
+    const conn = connectedIds(hoveredNodeId)
+
+    // Attract connected, repel others
+    sim.force('gravity-attract',
+      d3.forceManyBody<SimNode>()
+        .strength((n: SimNode) => conn.has(n.id) && n.id !== hoveredNodeId ? -80 : 0)
+    )
+    sim.force('gravity-repel',
+      d3.forceManyBody<SimNode>()
+        .strength((n: SimNode) => !conn.has(n.id) ? 60 : 0)
+    )
+    sim.alpha(.4).restart()
+
+    return () => {
+      if (simRef.current) {
+        simRef.current.force('gravity-attract', null)
+        simRef.current.force('gravity-repel', null)
+      }
+    }
+  }, [hoveredNodeId, gravityEnabled, connectedIds])
+
+  // ── Learning path highlight ───────────────────────────────────────────────
+  useEffect(() => {
+    const meta = getMeta(svgRef)
     if (!meta) return
     const { nodeGrp, linkGrp } = meta
 
-    const vn = new Set(visibleNodes().map(n => n.id))
-    nodeGrp.attr('display', (n: SimNode) => vn.has(n.id) ? null : 'none')
-    linkGrp.attr('display', (l: SimLink) =>
-      vn.has(l.source.id) && vn.has(l.target.id) ? null : 'none')
-  }, [filterTypes, visibleNodes, visibleLinks])
+    if (learningPath.length === 0) return
+
+    const pathSet = new Set(learningPath)
+
+    // Build path link pairs
+    const pathLinkSet = new Set<string>()
+    for (let i = 0; i < learningPath.length - 1; i++) {
+      pathLinkSet.add(`${learningPath[i]}->${learningPath[i+1]}`)
+    }
+
+    // Pulse animation on path nodes
+    nodeGrp.selectAll<SVGRectElement, SimNode>('.node-card')
+      .attr('filter', n =>
+        pathSet.has(n.id)
+          ? 'url(#glow-path)'
+          : `url(#glow-${n.id})`
+      )
+      .attr('stroke', n => pathSet.has(n.id) ? '#f59e0b' : n.color)
+      .attr('stroke-width', n => pathSet.has(n.id) ? 2.5 : 1.5 + (n.inDegree ?? 0) * .4)
+
+    // Highlight path edges
+    linkGrp.select<SVGLineElement>('.link-line')
+      .attr('stroke', (l: SimLink) =>
+        pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? '#f59e0b' : '#d1d5db')
+      .attr('stroke-width', (l: SimLink) =>
+        pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? 2.5 : 1.4)
+      .attr('opacity', (l: SimLink) =>
+        pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? 1 : .3)
+      .attr('marker-end', (l: SimLink) =>
+        pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? 'url(#arr-path)' : 'url(#arr)')
+
+    // Animate path in sequence using step labels
+    const pathSteps = nodeGrp.filter((n: SimNode) => pathSet.has(n.id))
+    pathSteps.selectAll<SVGCircleElement, SimNode>('.path-step-badge').remove()
+    learningPath.forEach((id, i) => {
+      nodeGrp.filter((n: SimNode) => n.id === id)
+        .append('circle')
+        .attr('class', 'path-step-badge')
+        .attr('r', 9)
+        .attr('cx', (n: SimNode) => nodeHalfW(n, Math.max(...useGraphStore.getState().nodes.map(x => x.inDegree ?? 0), 1)))
+        .attr('cy', (n: SimNode) => -nodeHalfH(n, Math.max(...useGraphStore.getState().nodes.map(x => x.inDegree ?? 0), 1)))
+        .attr('fill', '#f59e0b')
+        .attr('stroke', '#fff').attr('stroke-width', 1.5)
+        .append('title').text(`步骤 ${i + 1}`)
+    })
+    nodeGrp.filter((n: SimNode) => pathSet.has(n.id))
+      .append('text')
+      .attr('class', 'path-step-badge')
+      .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+      .attr('font-size', 8).attr('font-weight', '800').attr('fill', '#fff')
+      .attr('x', (n: SimNode) => nodeHalfW(n, Math.max(...useGraphStore.getState().nodes.map(x => x.inDegree ?? 0), 1)))
+      .attr('y', (n: SimNode) => -nodeHalfH(n, Math.max(...useGraphStore.getState().nodes.map(x => x.inDegree ?? 0), 1)))
+      .text((_n: SimNode) => {
+        const idx = learningPath.findIndex(id => id === _n.id)
+        return idx >= 0 ? `${idx + 1}` : ''
+      })
+
+    return () => {
+      // Clear path badges on unmount/reset
+      const m = getMeta(svgRef)
+      if (!m) return
+      m.nodeGrp.selectAll('.path-step-badge').remove()
+      m.nodeGrp.selectAll<SVGRectElement, SimNode>('.node-card')
+        .attr('filter', n => `url(#glow-${n.id})`)
+        .attr('stroke', n => n.color)
+        .attr('stroke-width', n => 1.5 + (n.inDegree ?? 0) * .4)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [learningPath])
 
   const resetLayout = useCallback(() => {
     simRef.current?.alpha(.8).restart()
@@ -337,7 +456,6 @@ const GraphCanvas: React.FC = () => {
           OKF · js_syntax · {visibleNodes().length} nodes
         </span>
 
-        {/* Type filters */}
         <div className={styles.filters}>
           {typeKeys.map(t => (
             <button
@@ -351,7 +469,6 @@ const GraphCanvas: React.FC = () => {
           ))}
         </div>
 
-        {/* Graph search */}
         <div className={styles.searchWrap}>
           <svg className={styles.searchIcon} width="12" height="12" viewBox="0 0 16 16" fill="none">
             <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5"/>
@@ -370,6 +487,18 @@ const GraphCanvas: React.FC = () => {
           />
         </div>
 
+        {/* Gravity toggle */}
+        <button
+          className={`${styles.toolBtn} ${gravityEnabled ? styles.toolBtnOn : ''}`}
+          onClick={toggleGravity}
+          title="引力场：悬停节点时相关节点聚拢"
+        >
+          {gravityEnabled ? '⚡ 引力场' : '○ 引力场'}
+        </button>
+
+        {/* Learning path */}
+        <LearningPath />
+
         <button className={styles.toolBtn} onClick={resetLayout}>重置</button>
       </div>
 
@@ -379,50 +508,54 @@ const GraphCanvas: React.FC = () => {
 
         {/* Legend */}
         <div className={styles.legend}>
-          <div className={styles.legendItem}>
-            <span className={styles.legendDot} style={{ background: '#3d9fde' }} />JS Syntax
-          </div>
-          <div className={styles.legendItem}>
-            <span className={styles.legendDot} style={{ background: '#52c41a' }} />JS Builtin
-          </div>
-          <div className={styles.legendItem}>
-            <span className={styles.legendDot} style={{ background: '#fa8c16' }} />JS Pattern
-          </div>
+          <div className={styles.legendItem}><span className={styles.legendDot} style={{ background: '#3d9fde' }} />JS Syntax</div>
+          <div className={styles.legendItem}><span className={styles.legendDot} style={{ background: '#52c41a' }} />JS Builtin</div>
+          <div className={styles.legendItem}><span className={styles.legendDot} style={{ background: '#fa8c16' }} />JS Pattern</div>
           <div className={styles.legendDivider} />
-          <div className={styles.legendItem} style={{ color: '#8a9099' }}>
-            节点大小 = 被引用次数
-          </div>
-          <div className={styles.legendItem} style={{ color: '#8a9099' }}>
-            光晕强度 = 阅读次数
-          </div>
-          <div className={styles.legendItem} style={{ color: '#8a9099' }}>
-            双击节点查看文档
-          </div>
+          <div className={styles.legendItem} style={{ color: '#8a9099' }}>节点大小 = 被引用次数</div>
+          <div className={styles.legendItem} style={{ color: '#8a9099' }}>光晕强度 = 阅读次数</div>
+          {learningPath.length > 0 && (
+            <div className={styles.legendItem} style={{ color: '#f59e0b', fontWeight: 600 }}>
+              <span className={styles.legendDot} style={{ background: '#f59e0b' }} />学习路径
+            </div>
+          )}
+          <div className={styles.legendItem} style={{ color: '#8a9099' }}>双击节点查看文档</div>
         </div>
 
-        {/* Stat */}
         <div className={styles.stat}>
           {visibleNodes().length} 节点 · {visibleLinks().length} 关系
+          {timelineYear && <span> · ≤ {timelineYear}</span>}
         </div>
 
-        {/* Edge type hint (shown when a node is selected) */}
         {selectedNodeId && (
           <div className={styles.edgeHint}>
             {connectedLinks(selectedNodeId).map((l, i) => (
               <div key={i} className={styles.edgeHintItem}>
-                <span
-                  className={styles.edgeHintDot}
-                  style={{ background: EDGE_TYPE_COLOR[l.type] }}
-                />
+                <span className={styles.edgeHintDot} style={{ background: EDGE_TYPE_COLOR[l.type] }} />
                 <span className={styles.edgeHintType}>{EDGE_TYPE_LABEL[l.type]}</span>
                 <span className={styles.edgeHintDesc}>{l.description.slice(0, 40)}…</span>
               </div>
             ))}
           </div>
         )}
+
+        {/* Timeline — floating card top-right */}
+        <Timeline />
       </div>
     </div>
   )
+}
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+type D3Meta = {
+  linkGrp: d3.Selection<SVGGElement, SimLink, SVGGElement, unknown>
+  nodeGrp: d3.Selection<SVGGElement, SimNode, SVGGElement, unknown>
+  simNodes: SimNode[]
+  simLinks: SimLink[]
+  maxIn: number
+}
+function getMeta(svgRef: React.RefObject<SVGSVGElement>): D3Meta | undefined {
+  return (svgRef.current as unknown as Record<string, unknown>)?.['__d3meta'] as D3Meta | undefined
 }
 
 export default GraphCanvas
