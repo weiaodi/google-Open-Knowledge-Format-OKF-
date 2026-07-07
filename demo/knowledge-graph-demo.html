@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JS 知识图谱 — 魏奥迪的知识库</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    /* ─── Reset ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px; color: #1f2329;
+      background: #fff;
+      display: flex; flex-direction: column;
+      height: 100vh; overflow: hidden;
+    }
+
+    /* ─── Topbar ─────────────────────────────────────────── */
+    .topbar {
+      height: 48px; min-height: 48px;
+      background: #fff; border-bottom: 1px solid #e5e6eb;
+      display: flex; align-items: center; padding: 0 16px; gap: 8px;
+      z-index: 300; flex-shrink: 0;
+    }
+    .topbar-back {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 13px; color: #4e5969; cursor: pointer;
+      padding: 4px 8px; border-radius: 4px; text-decoration: none;
+      transition: background .15s; white-space: nowrap;
+    }
+    .topbar-back:hover { background: #f2f3f5; }
+    .topbar-breadcrumb {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 13px; color: #4e5969; flex: 1; overflow: hidden;
+    }
+    .topbar-breadcrumb .sep { opacity: .4; flex-shrink: 0; }
+    .topbar-breadcrumb .cur { color: #1f2329; font-weight: 500; }
+    .topbar-tag {
+      font-size: 11px; background: #f0ecff; color: #7c4dff;
+      border-radius: 4px; padding: 2px 7px; font-weight: 600; flex-shrink: 0;
+    }
+    .topbar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .tbtn {
+      height: 32px; padding: 0 14px; border-radius: 6px;
+      font-size: 13px; cursor: pointer; border: none;
+      display: flex; align-items: center; gap: 5px; transition: background .15s;
+    }
+    .tbtn.outline { background: #fff; border: 1px solid #dde1e6; color: #4e5969; }
+    .tbtn.outline:hover { background: #f2f3f5; }
+    .tbtn.primary { background: #1456f0; color: #fff; }
+    .tbtn.primary:hover { background: #0f45cc; }
+
+    /* ─── Body layout ────────────────────────────────────── */
+    .body-wrap { display: flex; flex: 1; overflow: hidden; }
+
+    /* ─── Sidebar ────────────────────────────────────────── */
+    .sidebar {
+      width: 240px; min-width: 240px;
+      background: #f7f8fa; border-right: 1px solid #e5e6eb;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .sidebar-inner { flex: 1; overflow-y: auto; padding: 8px 0; }
+    .sb-search { margin: 10px 12px 6px; position: relative; }
+    .sb-search input {
+      width: 100%; padding: 6px 10px 6px 30px;
+      border: 1px solid #dde1e6; border-radius: 6px;
+      font-size: 13px; background: #fff; outline: none; color: #1f2329;
+    }
+    .sb-search input:focus { border-color: #1456f0; }
+    .sb-search .si {
+      position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+      color: #9ca3af; pointer-events: none;
+    }
+    .sbi {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 14px; font-size: 13px; color: #4e5969;
+      cursor: pointer; border-radius: 4px; margin: 1px 6px;
+      transition: background .12s; user-select: none;
+    }
+    .sbi:hover { background: #eef0f5; }
+    .sbi.active { background: #e6ecff; color: #1456f0; font-weight: 500; }
+    .sbi.kg-parent { color: #1f2329; font-weight: 600; }
+    .sbi.kg-parent.active { background: #eef3ff; color: #1456f0; }
+    .sbi .chev { margin-left: auto; font-size: 11px; color: #c0c4cc; transition: transform .2s; }
+    .sbi .chev.open { transform: rotate(90deg); }
+    .sbi .sdot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .sb-children { display: none; }
+    .sb-children.open { display: block; }
+    .sb-children .sbi { padding-left: 32px; font-size: 12.5px; }
+    .sb-div { height: 1px; background: #e5e6eb; margin: 6px 0; }
+    .sb-footer {
+      padding: 10px 16px; border-top: 1px solid #e5e6eb;
+      display: flex; gap: 16px;
+    }
+    .sb-footer a { font-size: 12px; color: #8a9099; text-decoration: none; cursor: pointer; }
+    .sb-footer a:hover { color: #4e5969; }
+
+    /* ─── Content area ───────────────────────────────────── */
+    .content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* ─── Graph view ──────────────────────────────────────── */
+    .graph-view {
+      flex: 1; display: flex; flex-direction: column;
+      background: #f5f6fa; overflow: hidden;
+    }
+
+    /* toolbar */
+    .graph-toolbar {
+      height: 46px; min-height: 46px;
+      background: #fff; border-bottom: 1px solid #e5e6eb;
+      display: flex; align-items: center; padding: 0 14px; gap: 10px;
+      flex-shrink: 0;
+    }
+    .gt-title { font-size: 13px; font-weight: 600; color: #1f2329; white-space: nowrap; }
+    .gt-badge {
+      font-size: 11px; background: #f0f5ff; color: #1456f0;
+      border-radius: 4px; padding: 2px 8px; white-space: nowrap;
+    }
+    .gt-filters { display: flex; gap: 6px; }
+    .gfbtn {
+      font-size: 11px; border: 1px solid #dde1e6;
+      border-radius: 20px; padding: 3px 10px; cursor: pointer;
+      background: #fff; color: #8a9099; transition: all .15s;
+    }
+    .gfbtn:hover { border-color: #1456f0; color: #1456f0; }
+    .gfbtn.on { color: #fff; border-color: transparent; }
+    .gfbtn.on.f-syntax  { background: #1456f0; }
+    .gfbtn.on.f-builtin { background: #0d8050; }
+    .gfbtn.on.f-pattern { background: #c75000; }
+    .gt-search { position: relative; margin-left: auto; }
+    .gt-search input {
+      background: #f5f6fa; border: 1px solid #e5e6eb; border-radius: 6px;
+      color: #1f2329; font-size: 12px; padding: 5px 10px 5px 28px;
+      outline: none; width: 180px;
+    }
+    .gt-search input:focus { border-color: #1456f0; background: #fff; }
+    .gt-search input::placeholder { color: #b0b8c4; }
+    .gt-search .gsi {
+      position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+      color: #b0b8c4; pointer-events: none;
+    }
+    .gtbtn {
+      font-size: 12px; background: #f5f6fa; border: 1px solid #e5e6eb;
+      border-radius: 5px; padding: 5px 10px; color: #4e5969;
+      cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .gtbtn:hover { background: #eef0f5; border-color: #c5cad3; }
+
+    /* graph body */
+    .graph-body {
+      flex: 1; display: flex; overflow: hidden;
+      position: relative; min-height: 0;
+    }
+    .graph-canvas {
+      flex: 1; position: relative; overflow: hidden;
+      /* leave room for AI bar at bottom: handled by flex column */
+    }
+    .graph-canvas svg { width: 100%; height: 100%; }
+
+    /* hover preview card */
+    .node-preview {
+      position: absolute; pointer-events: none;
+      background: #fff; border: 1px solid #e5e6eb;
+      border-radius: 8px; padding: 10px 14px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.10);
+      min-width: 200px; max-width: 260px;
+      opacity: 0; transition: opacity .15s;
+      z-index: 50;
+    }
+    .node-preview.show { opacity: 1; }
+    .np-type {
+      font-size: 10px; font-weight: 700; border-radius: 3px;
+      padding: 1px 7px; display: inline-block; margin-bottom: 5px;
+    }
+    .np-name { font-size: 13px; font-weight: 700; color: #1f2329; margin-bottom: 4px; }
+    .np-desc { font-size: 12px; color: #6b7280; line-height: 1.5; margin-bottom: 8px; }
+    .np-stats { display: flex; gap: 12px; }
+    .np-stat { display: flex; flex-direction: column; align-items: center; }
+    .np-stat-val { font-size: 14px; font-weight: 700; color: #1456f0; }
+    .np-stat-lbl { font-size: 10px; color: #9ca3af; }
+
+    /* legend & stat overlay */
+    .graph-legend {
+      position: absolute; bottom: 14px; left: 14px;
+      background: rgba(255,255,255,.9); border: 1px solid #e5e6eb;
+      border-radius: 7px; padding: 8px 12px;
+      display: flex; flex-direction: column; gap: 5px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    }
+    .gl-item { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #4e5969; }
+    .gl-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+    .gl-extra { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e5e6eb; }
+    .gl-extra-item { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #4e5969; }
+    .graph-stat {
+      position: absolute; bottom: 14px; right: 14px;
+      background: rgba(255,255,255,.9); border: 1px solid #e5e6eb;
+      border-radius: 6px; padding: 5px 12px;
+      font-size: 11px; color: #8a9099;
+      box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+
+    /* ─── Detail panel ───────────────────────────────────── */
+    .detail-panel {
+      width: 0; min-width: 0;
+      background: #fff; border-left: 1px solid #e5e6eb;
+      display: flex; flex-direction: column; overflow: hidden;
+      transition: width .25s cubic-bezier(.4,0,.2,1), min-width .25s;
+      flex-shrink: 0;
+    }
+    .detail-panel.open { width: 340px; min-width: 340px; }
+    .detail-scroll { flex: 1; overflow-y: auto; }
+    .detail-header {
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      position: sticky; top: 0; background: #fff; z-index: 2;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .detail-close {
+      margin-left: auto; flex-shrink: 0;
+      background: none; border: none; cursor: pointer;
+      color: #8a9099; font-size: 16px;
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 4px; transition: background .12s; margin-top: -2px;
+    }
+    .detail-close:hover { background: #f2f3f5; color: #4e5969; }
+    .d-type { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 10px; margin-bottom: 6px; }
+    .d-name { font-size: 16px; font-weight: 700; color: #1f2329; line-height: 1.3; }
+    .detail-body { padding: 14px 18px 24px; }
+    .d-stats-row {
+      display: flex; gap: 16px; margin-bottom: 14px;
+      background: #f7f8fa; border-radius: 8px; padding: 10px 14px;
+    }
+    .d-stat { display: flex; flex-direction: column; align-items: center; flex: 1; }
+    .d-stat-val { font-size: 18px; font-weight: 700; color: #1456f0; }
+    .d-stat-lbl { font-size: 11px; color: #8a9099; margin-top: 1px; }
+    .d-desc { font-size: 13px; color: #4e5969; line-height: 1.65; margin-bottom: 12px; }
+    .d-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+    .d-chip {
+      font-size: 11px; background: #f2f3f5; color: #4e5969;
+      border-radius: 4px; padding: 3px 8px; border: 1px solid #e5e6eb;
+    }
+    .d-resource {
+      font-size: 12px; color: #1456f0; text-decoration: none;
+      display: block; margin-bottom: 14px; word-break: break-all;
+    }
+    .d-resource:hover { text-decoration: underline; }
+    .d-section { margin-bottom: 16px; }
+    .d-sec-title {
+      font-size: 11.5px; font-weight: 700; color: #9ca3af;
+      text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px;
+    }
+    .d-code {
+      background: #f7f8fa; border: 1px solid #e5e6eb;
+      border-radius: 7px; padding: 12px 14px; overflow-x: auto;
+    }
+    .d-code pre {
+      font-family: "JetBrains Mono", Menlo, monospace;
+      font-size: 11.5px; color: #374151; line-height: 1.65; white-space: pre;
+    }
+    .d-code pre .kw  { color: #7c3aed; }
+    .d-code pre .fn  { color: #1456f0; }
+    .d-code pre .str { color: #059669; }
+    .d-code pre .cm  { color: #9ca3af; }
+    .d-rel-list, .d-cite-list { list-style: none; }
+    .d-rel-list li, .d-cite-list li {
+      display: flex; align-items: flex-start; gap: 6px;
+      font-size: 13px; line-height: 1.55; color: #374151;
+      padding: 5px 0; border-bottom: 1px solid #f5f5f5;
+    }
+    .d-rel-list li:last-child, .d-cite-list li:last-child { border-bottom: none; }
+    .d-rel-list li::before, .d-cite-list li::before {
+      content: "•"; color: #1456f0; font-size: 14px; flex-shrink: 0;
+    }
+    .d-rel-list li a, .d-cite-list li a { color: #1456f0; text-decoration: none; font-weight: 500; }
+    .d-rel-list li a:hover, .d-cite-list li a:hover { text-decoration: underline; }
+    .d-rel-go {
+      margin-left: auto; flex-shrink: 0;
+      font-size: 11px; color: #b0b8c4; cursor: pointer;
+      padding: 2px 5px; border-radius: 3px;
+    }
+    .d-rel-go:hover { background: #f0f5ff; color: #1456f0; }
+    .d-full-btn {
+      width: 100%; padding: 9px; border: 1px solid #1456f0;
+      border-radius: 6px; background: #f0f5ff; color: #1456f0;
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: background .15s; margin-top: 4px;
+    }
+    .d-full-btn:hover { background: #dce8ff; }
+
+    /* ─── AI bar ─────────────────────────────────────────── */
+    .ai-bar {
+      flex-shrink: 0;
+      background: #fff; border-top: 1px solid #e5e6eb;
+      padding: 10px 14px 12px;
+    }
+    .ai-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    .ai-chip {
+      font-size: 12px; background: #f5f6fa; border: 1px solid #e5e6eb;
+      border-radius: 20px; padding: 4px 12px; cursor: pointer; color: #4e5969;
+      transition: all .15s; white-space: nowrap;
+    }
+    .ai-chip:hover { background: #eef3ff; border-color: #a5c0f5; color: #1456f0; }
+    .ai-input-row { display: flex; gap: 8px; align-items: flex-end; }
+    .ai-input-wrap { flex: 1; position: relative; }
+    .ai-input {
+      width: 100%; padding: 9px 14px; border: 1px solid #dde1e6;
+      border-radius: 10px; font-size: 13.5px; outline: none; color: #1f2329;
+      background: #fff; resize: none; font-family: inherit;
+      transition: border-color .15s; line-height: 1.5;
+    }
+    .ai-input:focus { border-color: #1456f0; box-shadow: 0 0 0 2px #e6ecff; }
+    .ai-input::placeholder { color: #b0b8c4; }
+    .ai-send {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: #1456f0; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: background .15s;
+    }
+    .ai-send:hover { background: #0f45cc; }
+    .ai-send svg { color: #fff; }
+    /* AI reply bubble */
+    .ai-reply {
+      margin-top: 8px; padding: 10px 14px;
+      background: #f7f8fa; border: 1px solid #e5e6eb; border-radius: 8px;
+      font-size: 13px; color: #374151; line-height: 1.65;
+      display: none;
+    }
+    .ai-reply.show { display: block; }
+    .ai-reply .ai-hl { color: #1456f0; font-weight: 600; cursor: pointer; }
+    .ai-reply .ai-hl:hover { text-decoration: underline; }
+
+    /* ─── Doc view ───────────────────────────────────────── */
+    .doc-view {
+      flex: 1; overflow-y: auto; background: #fff;
+      display: none;
+    }
+    .doc-view.active { display: block; }
+    .doc-inner { max-width: 800px; margin: 0 auto; padding: 40px 48px 80px; }
+    .doc-title { font-size: 24px; font-weight: 700; color: #1f2329; margin-bottom: 8px; }
+    .doc-meta { font-size: 13px; color: #8a9099; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
+    .doc-meta .dot { width: 3px; height: 3px; border-radius: 50%; background: #c0c4cc; }
+    .doc-p { font-size: 14px; line-height: 1.8; color: #3a3f4a; margin-bottom: 14px; }
+    .doc-h2 { font-size: 17px; font-weight: 600; color: #1f2329; margin: 28px 0 10px; }
+    .doc-code {
+      background: #f7f8fa; border: 1px solid #e5e6eb; border-radius: 7px;
+      padding: 14px 16px; margin: 10px 0 14px; overflow-x: auto;
+    }
+    .doc-code pre {
+      font-family: "JetBrains Mono", Menlo, monospace;
+      font-size: 12px; color: #374151; line-height: 1.7; white-space: pre;
+    }
+    .doc-code pre .kw  { color: #7c3aed; }
+    .doc-code pre .fn  { color: #1456f0; }
+    .doc-code pre .str { color: #059669; }
+    .doc-code pre .cm  { color: #9ca3af; }
+    .doc-callout {
+      background: #f0f5ff; border-left: 3px solid #1456f0;
+      border-radius: 4px; padding: 12px 16px; margin: 14px 0;
+      font-size: 13.5px; color: #374151; line-height: 1.7;
+    }
+    .doc-div { border: none; border-top: 1px solid #e5e6eb; margin: 24px 0; }
+    .doc-tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .doc-tag { font-size: 11.5px; background: #f2f3f5; color: #4e5969; border-radius: 4px; padding: 3px 9px; border: 1px solid #e5e6eb; }
+    .doc-rel-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 6px; border: 1px solid #e5e6eb;
+      margin-bottom: 8px; cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .doc-rel-item:hover { border-color: #1456f0; background: #f0f5ff; }
+    .doc-rel-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .doc-rel-label { font-size: 13px; font-weight: 600; color: #1456f0; }
+    .doc-rel-desc { font-size: 12px; color: #8a9099; margin-left: auto; }
+    .doc-back {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 13px; color: #1456f0; cursor: pointer; margin-bottom: 20px;
+      padding: 5px 10px; border-radius: 5px; border: 1px solid #dde1e6;
+      background: #fff; transition: background .15s;
+    }
+    .doc-back:hover { background: #f0f5ff; }
+    .doc-kp-list { padding-left: 20px; margin: 8px 0 14px; }
+    .doc-kp-list li { font-size: 14px; line-height: 1.75; color: #3a3f4a; margin-bottom: 4px; }
+
+    /* ─── Pulse animation (reading hotness) ──────────────── */
+    @keyframes pulse-rect {
+      0%   { opacity: .45; stroke-width: 1.5px; }
+      50%  { opacity: .10; stroke-width: 0.5px; }
+      100% { opacity: .45; stroke-width: 1.5px; }
+    }
+    .pulse-ring { animation: pulse-rect 2.4s ease-in-out infinite; }
+
+    /* ─── Scrollbar ──────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #dde1e6; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #c0c4cc; }
+  </style>
+</head>
+<body>
+
+<!-- ── Topbar ── -->
+<div class="topbar">
+  <a class="topbar-back" href="#">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    魏奥迪的知识库
+  </a>
+  <div class="topbar-breadcrumb">
+    <span>创新业务探索</span><span class="sep">›</span>
+    <span>CodeGraph</span><span class="sep">›</span>
+    <span class="cur" id="bc-cur">JS 知识图谱</span>
+    <span class="topbar-tag" id="bc-tag">Graph View</span>
+  </div>
+  <div class="topbar-actions">
+    <button class="tbtn outline">所有者</button>
+    <button class="tbtn outline">分享</button>
+    <button class="tbtn primary">完成</button>
+  </div>
+</div>
+
+<div class="body-wrap">
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+    <div class="sb-search">
+      <span class="si">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <input type="text" placeholder="搜索知识库文档" />
+    </div>
+    <div class="sidebar-inner" id="sb-tree">
+      <div class="sbi"><span>🏠</span> 首页</div>
+      <div class="sbi"><span>📋</span> 目录</div>
+      <div class="sb-div"></div>
+      <div class="sbi"><span>📄</span> 周报</div>
+      <div class="sbi"><span>📁</span> 归档</div>
+      <div class="sbi"><span>🤖</span> ai相关</div>
+      <div class="sbi"><span>📄</span> 2026-6.28</div>
+      <div class="sb-div"></div>
+      <!-- KG parent -->
+      <div class="sbi kg-parent active" id="nav-graph" onclick="showGraphView()">
+        <span>🕸</span><span>JS 知识图谱</span>
+        <span class="chev open" id="kg-chev">›</span>
+      </div>
+      <div class="sb-children open" id="kg-children"></div>
+      <div class="sb-div"></div>
+      <div class="sbi"><span>📄</span> todos</div>
+      <div class="sbi"><span>📄</span> demo</div>
+    </div>
+    <div class="sb-footer">
+      <a>分享知识库</a><a>⚙ 设置</a>
+    </div>
+  </div>
+
+  <!-- ── Content ── -->
+  <div class="content">
+
+    <!-- Graph view -->
+    <div class="graph-view" id="graph-view">
+      <!-- Toolbar -->
+      <div class="graph-toolbar">
+        <span class="gt-title">🕸 JS 知识图谱</span>
+        <span class="gt-badge">OKF · js_syntax · <span id="node-count">7</span> nodes</span>
+        <div class="gt-filters">
+          <button class="gfbtn on f-syntax"  data-type="JS Syntax"  onclick="toggleFilter(this)">JS Syntax</button>
+          <button class="gfbtn on f-builtin" data-type="JS Builtin" onclick="toggleFilter(this)">JS Builtin</button>
+          <button class="gfbtn on f-pattern" data-type="JS Pattern" onclick="toggleFilter(this)">JS Pattern</button>
+        </div>
+        <div class="gt-search">
+          <span class="gsi">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <input type="text" placeholder="搜索节点…" id="g-search" />
+        </div>
+        <button class="gtbtn" onclick="resetLayout()">重置</button>
+        <button class="gtbtn" id="fs-btn" onclick="toggleFS()">全屏</button>
+      </div>
+
+      <!-- Graph body: canvas + detail panel -->
+      <div class="graph-body" id="graph-body">
+        <div class="graph-canvas" id="g-canvas">
+          <svg id="kg-svg"></svg>
+          <!-- Hover preview card -->
+          <div class="node-preview" id="node-preview"></div>
+          <!-- Legend -->
+          <div class="graph-legend">
+            <div class="gl-item"><div class="gl-dot" style="background:#3d9fde"></div>JS Syntax</div>
+            <div class="gl-item"><div class="gl-dot" style="background:#52c41a"></div>JS Builtin</div>
+            <div class="gl-item"><div class="gl-dot" style="background:#fa8c16"></div>JS Pattern</div>
+            <div class="gl-extra">
+              <div class="gl-extra-item">
+                <svg width="28" height="10" viewBox="0 0 28 10">
+                  <ellipse cx="8" cy="5" rx="8" ry="5" fill="#e0e7ff" stroke="#1456f0" stroke-width="1.2"/>
+                  <ellipse cx="22" cy="5" rx="5" ry="3" fill="#e0e7ff" stroke="#1456f0" stroke-width="1.2"/>
+                </svg>
+                节点大小 = 被引用次数
+              </div>
+              <div class="gl-extra-item">
+                <svg width="28" height="10" viewBox="0 0 28 10">
+                  <circle cx="14" cy="5" r="4" fill="#fde68a" stroke="#f59e0b" stroke-width="1.5" opacity=".8"/>
+                  <circle cx="14" cy="5" r="7" fill="none" stroke="#f59e0b" stroke-width="1" opacity=".35"/>
+                </svg>
+                光晕强度 = 阅读次数
+              </div>
+            </div>
+          </div>
+          <div class="graph-stat" id="g-stat">7 节点 · 9 关系</div>
+        </div>
+        <!-- Detail panel -->
+        <div class="detail-panel" id="detail-panel">
+          <div class="detail-scroll" id="detail-scroll"></div>
+        </div>
+      </div>
+
+      <!-- AI bar -->
+      <div class="ai-bar" id="ai-bar">
+        <div class="ai-chips" id="ai-chips">
+          <span class="ai-chip" onclick="askAI(this.textContent)">async/await 和 Promise 的区别？</span>
+          <span class="ai-chip" onclick="askAI(this.textContent)">哪些概念和 Closure 相关？</span>
+          <span class="ai-chip" onclick="askAI(this.textContent)">最基础的核心概念是哪个？</span>
+          <span class="ai-chip" onclick="askAI(this.textContent)">Arrow Functions 被引用了几次？</span>
+        </div>
+        <div class="ai-input-row">
+          <div class="ai-input-wrap">
+            <textarea class="ai-input" id="ai-input" rows="1"
+              placeholder="问我关于这个知识图谱的任何问题…"
+              onkeydown="handleAIKey(event)"></textarea>
+          </div>
+          <button class="ai-send" onclick="sendAI()">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 8l12-6-5 6 5 6-12-6z" fill="white"/>
+            </svg>
+          </button>
+        </div>
+        <div class="ai-reply" id="ai-reply"></div>
+      </div>
+    </div>
+
+    <!-- Doc view -->
+    <div class="doc-view" id="doc-view"></div>
+
+  </div><!-- /content -->
+</div><!-- /body-wrap -->
+
+<!-- ====== DATA + LOGIC (Part 2 will be inserted here) ====== -->
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  PART 2 — Data + D3 Graph Logic
+// ═══════════════════════════════════════════════════════════════
+
+// ─── Knowledge nodes ────────────────────────────────────────────
+const KG_NODES = [
+  {
+    id: "async_await", label: "async / await",
+    type: "JS Syntax", color: "#3d9fde",
+    reads: 2140,   // 阅读次数（热度）
+    resource: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function",
+    description: "基于 Promise 的语法糖，让异步代码看起来像同步代码，避免回调地狱。ES2017 引入。",
+    tags: ["async function","await","try/catch","Promise","ES2017","error handling"],
+    code: `<span class="kw">async</span> <span class="kw">function</span> <span class="fn">fetchUser</span>(id) {\n  <span class="kw">try</span> {\n    <span class="kw">const</span> res  = <span class="kw">await</span> fetch(<span class="str">\`/api/users/\${id}\`</span>);\n    <span class="kw">const</span> data = <span class="kw">await</span> res.json();\n    <span class="kw">return</span> data;\n  } <span class="kw">catch</span> (err) {\n    console.error(<span class="str">'请求失败:'</span>, err);\n    <span class="kw">return</span> <span class="kw">null</span>;\n  }\n}`,
+    keyPoints: [
+      "<code>async</code> 函数<strong>总是</strong>返回 Promise，即使 return 普通值",
+      "<code>await</code> 暂停当前函数，不阻塞主线程",
+      "多个独立 await 默认串行 — 并发用 <code>Promise.all</code>",
+      "<code>await</code> 只能在 async 函数内使用"
+    ],
+    related: [
+      { label:"Promise",         id:"promise",       desc:"async/await 的底层机制" },
+      { label:"Arrow Functions", id:"arrow_function", desc:"async 箭头函数写法" },
+      { label:"Closure",         id:"closure",        desc:"回调中利用闭包捕获状态" },
+      { label:"async function",  id:"async_fn_node",  desc:"声明异步函数的核心语法" },
+    ],
+    citations: [
+      { label:"MDN: async function", url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function" },
+      { label:"MDN: await",          url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await" },
+    ]
+  },
+  {
+    id: "promise", label: "Promise",
+    type: "JS Builtin", color: "#52c41a",
+    reads: 1580,
+    resource: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise",
+    description: "表示异步操作最终完成或失败的对象，提供链式调用的标准化异步编程模型（ES6 状态机）。",
+    tags: ["ES6","resolve","reject","then","catch","Promise.all","Promise.allSettled","微任务"],
+    code: `<span class="cm">// 并发等待多个请求</span>\nPromise.<span class="fn">all</span>([<span class="fn">fetchUser</span>(), <span class="fn">fetchPosts</span>()])\n  .<span class="fn">then</span>(([user, posts]) => {\n    console.<span class="fn">log</span>(user.name, posts.length);\n  })\n  .<span class="fn">catch</span>(err => console.<span class="fn">error</span>(err));`,
+    keyPoints: [
+      "状态不可逆：pending → fulfilled / rejected",
+      "<code>.then()</code> 始终返回新 Promise，支持链式调用",
+      "回调在<strong>微任务队列</strong>执行，优先级高于 setTimeout",
+      "链尾始终添加 <code>.catch()</code> 处理未捕获 rejection"
+    ],
+    related: [
+      { label:"async/await",     id:"async_await",   desc:"基于 Promise 的语法糖" },
+      { label:"Arrow Functions", id:"arrow_function", desc:".then() 回调中常用" },
+      { label:"async function",  id:"async_fn_node",  desc:"async 函数返回 Promise" },
+    ],
+    citations: [
+      { label:"MDN: Promise",        url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise" },
+      { label:"MDN: Using Promises", url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises" },
+    ]
+  },
+  {
+    id: "arrow_function", label: "Arrow Functions",
+    type: "JS Syntax", color: "#3d9fde",
+    reads: 980,
+    resource: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions",
+    description: "ES2015 引入的简洁函数语法，提供词法 this 绑定，不可用作构造函数。",
+    tags: ["=>","lexical this","implicit return","ES6","callback","concise body"],
+    code: `<span class="cm">// 词法 this 绑定</span>\n<span class="kw">class</span> <span class="fn">Counter</span> {\n  constructor() { <span class="kw">this</span>.n = 0; }\n  start() {\n    setInterval(<span class="kw">()</span> => {\n      console.log(<span class="kw">this</span>.n++); <span class="cm">// ✅ 正确</span>\n    }, 1000);\n  }\n}`,
+    keyPoints: [
+      "词法 <code>this</code>：继承定义时的外层作用域，无法被 call/apply/bind 改变",
+      "不能作为构造函数，new 会报 TypeError",
+      "无 <code>arguments</code> 对象，可变参数用 <code>...args</code>",
+      "返回对象字面量需加括号：<code>() => ({ key: val })</code>"
+    ],
+    related: [
+      { label:"Closure",        id:"closure",       desc:"词法 this 通过闭包机制实现" },
+      { label:"async/await",    id:"async_await",   desc:"async 箭头函数写法" },
+      { label:"Destructuring",  id:"destructuring", desc:"参数中常用解构提取值" },
+    ],
+    citations: [
+      { label:"MDN: Arrow Functions", url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions" },
+    ]
+  },
+  {
+    id: "closure", label: "Closure",
+    type: "JS Pattern", color: "#fa8c16",
+    reads: 1230,
+    resource: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Closures",
+    description: "函数与其词法环境的组合，用于数据封装和状态保持。JavaScript 最核心特性之一。",
+    tags: ["lexical scope","encapsulation","factory function","module pattern","memoization"],
+    code: `<span class="kw">function</span> <span class="fn">createCounter</span>(init = 0) {\n  <span class="kw">let</span> count = init; <span class="cm">// 私有</span>\n  <span class="kw">return</span> {\n    increment() { <span class="kw">return</span> ++count; },\n    getValue()  { <span class="kw">return</span> count; }\n  };\n}\n<span class="kw">const</span> c = <span class="fn">createCounter</span>(10);\nc.<span class="fn">increment</span>(); <span class="cm">// 11</span>`,
+    keyPoints: [
+      "闭包捕获变量<strong>引用</strong>，不是快照",
+      "每次函数调用创建独立闭包实例",
+      "<code>let</code> 替代 <code>var</code> 避免循环陷阱",
+      "<code>this</code> 不属于闭包，需用箭头函数保存"
+    ],
+    related: [
+      { label:"Arrow Functions", id:"arrow_function", desc:"词法 this 通过闭包机制实现" },
+      { label:"let / const",     id:"let_const",      desc:"块级作用域让闭包更可预测" },
+    ],
+    citations: [
+      { label:"MDN: Closures", url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Closures" },
+    ]
+  },
+  {
+    id: "async_fn_node", label: "async function",
+    type: "JS Syntax", color: "#3d9fde",
+    reads: 760,
+    resource: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function",
+    description: "async 关键字声明异步函数，内部可使用 await，总是返回一个 Promise 对象。",
+    tags: ["async","ES2017","Promise","generator","return"],
+    code: `<span class="cm">// 四种写法，总是返回 Promise</span>\n<span class="kw">async</span> <span class="kw">function</span> <span class="fn">decl</span>() {}\n<span class="kw">const</span> expr  = <span class="kw">async</span> <span class="kw">function</span>() {};\n<span class="kw">const</span> arrow = <span class="kw">async</span> () => {};\n<span class="kw">class</span> <span class="fn">Foo</span> { <span class="kw">async</span> <span class="fn">method</span>() {} }\n\n<span class="fn">decl</span>() <span class="kw">instanceof</span> Promise; <span class="cm">// true</span>`,
+    keyPoints: [
+      "函数体内抛出异常 → 返回 rejected Promise",
+      "相当于 Generator + Promise 的语法糖",
+      "可以是声明式、表达式、箭头函数或类方法"
+    ],
+    related: [
+      { label:"async/await", id:"async_await", desc:"async/await 完整用法" },
+      { label:"Promise",     id:"promise",     desc:"async 函数底层返回类型" },
+    ],
+    citations: [
+      { label:"MDN: async function", url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function" },
+    ]
+  },
+  {
+    id: "destructuring", label: "Destructuring",
+    type: "JS Syntax", color: "#3d9fde",
+    reads: 870,
+    resource: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment",
+    description: "解构赋值：从数组或对象中提取值赋给变量，让代码更简洁易读（ES2015）。",
+    tags: ["ES6","array","object","default values","rest","alias"],
+    code: `<span class="cm">// 对象解构 + 默认值 + 别名</span>\n<span class="kw">const</span> { name, age = 18, id: userId } = user;\n\n<span class="cm">// 配合 Promise.all 解构多个结果</span>\n<span class="kw">const</span> [user, posts] = <span class="kw">await</span> Promise.<span class="fn">all</span>([\n  <span class="fn">fetchUser</span>(), <span class="fn">fetchPosts</span>()\n]);`,
+    keyPoints: [
+      "对象解构按<strong>键名</strong>匹配；数组解构按<strong>位置</strong>匹配",
+      "可设默认值、重命名（冒号语法）",
+      "结合 rest: <code>{ a, ...rest }</code> 提取剩余属性"
+    ],
+    related: [
+      { label:"Arrow Functions", id:"arrow_function", desc:"函数参数中常见解构用法" },
+      { label:"async/await",     id:"async_await",    desc:"配合 Promise.all 解构结果" },
+    ],
+    citations: [
+      { label:"MDN: Destructuring", url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment" },
+    ]
+  },
+  {
+    id: "let_const", label: "let / const",
+    type: "JS Syntax", color: "#3d9fde",
+    reads: 640,
+    resource: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let",
+    description: "ES2015 块级作用域变量声明。const 不可重新赋值；let 可变，每次循环创建独立绑定。",
+    tags: ["block scope","const","let","TDZ","ES6","hoisting"],
+    code: `<span class="cm">// let 修复循环闭包陷阱</span>\n<span class="kw">for</span> (<span class="kw">let</span> i = 0; i < 3; i++) {\n  setTimeout(() => console.log(i), 100);\n} <span class="cm">// 0, 1, 2 ✅</span>\n\n<span class="kw">const</span> API = <span class="str">'https://api.example.com'</span>;\n<span class="kw">const</span> arr = [1, 2, 3];\narr.push(4); <span class="cm">// ✅ 内容可变</span>`,
+    keyPoints: [
+      "<code>const</code> 禁止重新赋值，对象/数组内容仍可修改",
+      "暂时性死区（TDZ）：声明前访问报 ReferenceError",
+      "优先用 <code>const</code>，需重新赋值才用 <code>let</code>"
+    ],
+    related: [
+      { label:"Closure", id:"closure", desc:"块级作用域让闭包行为可预测" },
+    ],
+    citations: [
+      { label:"MDN: let",   url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let" },
+      { label:"MDN: const", url:"https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/const" },
+    ]
+  }
+];
+
+const KG_LINKS = [
+  { source:"async_await",   target:"promise",        label:"基于" },
+  { source:"async_await",   target:"arrow_function", label:"常用" },
+  { source:"async_await",   target:"closure",        label:"利用" },
+  { source:"async_await",   target:"async_fn_node",  label:"语法" },
+  { source:"promise",       target:"arrow_function", label:"回调" },
+  { source:"closure",       target:"arrow_function", label:"词法this" },
+  { source:"arrow_function",target:"destructuring",  label:"参数解构" },
+  { source:"closure",       target:"let_const",      label:"作用域" },
+  { source:"async_await",   target:"destructuring",  label:"结果解构" },
+];
+
+// ─── Compute in-degree (被引用次数) per node ─────────────────────
+const inDegree = {};
+KG_NODES.forEach(n => { inDegree[n.id] = 0; });
+KG_LINKS.forEach(l => { inDegree[l.target] = (inDegree[l.target] || 0) + 1; });
+
+// attach to nodes
+KG_NODES.forEach(n => { n.inDegree = inDegree[n.id] || 0; });
+
+// node size scale: inDegree 0→baseR, max→maxR
+// 节点尺寸：以标签字符数为基础，再叠加入度缩放
+// BASE_R: 最小半高, MAX_R: 最大半高（缩小以避免重叠）
+const BASE_R  = 22;   // min half-height (px)
+const MAX_R   = 36;   // max half-height (px)  — 约 1.6x
+const maxIn   = Math.max(...KG_NODES.map(n => n.inDegree));
+function nodeHalfH(d) {
+  if (maxIn === 0) return BASE_R;
+  return BASE_R + (d.inDegree / maxIn) * (MAX_R - BASE_R);
+}
+// 宽度 = 标签字符长度自适应，再叠加入度放大
+function nodeHalfW(d) {
+  const labelW = d.label.length * 7 + 20; // 字符宽度估算
+  const scaleW = nodeHalfH(d) * 2.2;      // 高度比例
+  return Math.max(labelW, scaleW) / 2;
+}
+
+// read scale: 光晕柔和 — sigma 范围缩小，避免遮挡相邻节点
+const maxReads = Math.max(...KG_NODES.map(n => n.reads));
+function glowSigma(d)  { return 1.5 + (d.reads / maxReads) * 5; }   // 1.5 ~ 6.5
+function glowOpacity(d){ return 0.20 + (d.reads / maxReads) * 0.40; } // 0.2 ~ 0.6
+function pulseAmpl(d)  { return 3 + (d.reads / maxReads) * 7; }  // 3 ~ 10px，贴近节点边缘
+
+// color map
+const TYPE_COLOR = { "JS Syntax":"#3d9fde", "JS Builtin":"#52c41a", "JS Pattern":"#fa8c16" };
+const TYPE_BG    = { "JS Syntax":{ bg:"#e6f0ff", fg:"#1456f0" }, "JS Builtin":{ bg:"#e6fff0", fg:"#0d8050" }, "JS Pattern":{ bg:"#fff3e0", fg:"#c75000" } };
+
+// ─── Sidebar children ────────────────────────────────────────────
+(function buildSidebar() {
+  const el = document.getElementById('kg-children');
+  KG_NODES.forEach(n => {
+    const item = document.createElement('div');
+    item.className = 'sbi';
+    item.id = 'nav-' + n.id;
+    item.innerHTML = `<span class="sdot" style="background:${TYPE_COLOR[n.type]}"></span><span>${n.label}</span>`;
+    item.onclick = () => showDocView(n.id);
+    el.appendChild(item);
+  });
+})();
+
+// ─── View switching helpers ──────────────────────────────────────
+function setActiveSB(id) {
+  document.querySelectorAll('.sbi').forEach(e => e.classList.remove('active'));
+  const el = document.getElementById('nav-' + id);
+  if (el) el.classList.add('active');
+}
+
+function showGraphView() {
+  document.getElementById('graph-view').style.display = 'flex';
+  document.getElementById('doc-view').classList.remove('active');
+  document.getElementById('bc-cur').textContent = 'JS 知识图谱';
+  document.getElementById('bc-tag').textContent = 'Graph View';
+  setActiveSB('graph');
+  document.getElementById('nav-graph').classList.add('active');
+}
+
+function showDocView(nodeId) {
+  const node = KG_NODES.find(n => n.id === nodeId);
+  if (!node) return;
+  document.getElementById('graph-view').style.display = 'none';
+  const dv = document.getElementById('doc-view');
+  dv.classList.add('active');
+  document.getElementById('bc-cur').textContent = node.label;
+  document.getElementById('bc-tag').textContent = node.type;
+  setActiveSB(nodeId);
+
+  const tc = TYPE_BG[node.type] || { bg:'#f2f3f5', fg:'#4e5969' };
+  const tagsH = node.tags.map(t => `<span class="doc-tag">${t}</span>`).join('');
+  const kpH   = (node.keyPoints||[]).map(k => `<li>${k}</li>`).join('');
+  const relH  = node.related.map(r => {
+    const rc = TYPE_COLOR[KG_NODES.find(n=>n.id===r.id)?.type] || '#999';
+    return `<div class="doc-rel-item" onclick="showDocView('${r.id}')">
+      <div class="doc-rel-dot" style="background:${rc}"></div>
+      <span class="doc-rel-label">${r.label}</span>
+      <span class="doc-rel-desc">${r.desc}</span>
+    </div>`;
+  }).join('');
+  const citeH = node.citations.map(c =>
+    `<li><a href="${c.url}" target="_blank">${c.label}</a></li>`).join('');
+
+  dv.innerHTML = `<div class="doc-inner">
+    <button class="doc-back" onclick="showGraphView()">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+        <path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>返回知识图谱
+    </button>
+    <h1 class="doc-title">${node.label}</h1>
+    <div class="doc-meta">
+      <span style="background:${tc.bg};color:${tc.fg};border-radius:4px;padding:2px 9px;font-size:11px;font-weight:700;">${node.type}</span>
+      <span class="dot"></span>
+      <span>OKF · js_syntax</span>
+      <span class="dot"></span>
+      <span>📖 ${node.reads.toLocaleString()} 次阅读</span>
+      <span class="dot"></span>
+      <span>🔗 被引用 ${node.inDegree} 次</span>
+    </div>
+    <div class="doc-tag-row">${tagsH}</div>
+    <div class="doc-callout">${node.description}</div>
+    <hr class="doc-div"/>
+    <h2 class="doc-h2">代码示例</h2>
+    <div class="doc-code"><pre>${node.code}</pre></div>
+    ${kpH ? `<hr class="doc-div"/><h2 class="doc-h2">核心要点</h2><ul class="doc-kp-list">${kpH}</ul>` : ''}
+    <hr class="doc-div"/>
+    <h2 class="doc-h2">相关概念</h2>${relH}
+    <hr class="doc-div"/>
+    <h2 class="doc-h2">引用来源</h2>
+    <ul class="d-cite-list">${citeH}</ul>
+    <hr class="doc-div"/>
+    <p class="doc-p" style="font-size:12px;color:#b0b8c4;">来源：okf/bundles/js_syntax/ · 2026-07-05</p>
+  </div>`;
+}
+
+// ─── D3 Force Graph ──────────────────────────────────────────────
+(function initGraph() {
+  const canvasEl   = document.getElementById('g-canvas');
+  const svgEl      = document.getElementById('kg-svg');
+  const preview    = document.getElementById('node-preview');
+  const detailEl   = document.getElementById('detail-panel');
+  const detailScrl = document.getElementById('detail-scroll');
+
+  let W = canvasEl.clientWidth;
+  let H = canvasEl.clientHeight;
+
+  const svg = d3.select(svgEl).attr('width', W).attr('height', H);
+
+  // ── Defs ──────────────────────────────────────────────────────
+  const defs = svg.append('defs');
+
+  // arrowhead
+  defs.append('marker')
+    .attr('id','arr').attr('viewBox','0 -4 8 8')
+    .attr('refX',4).attr('refY',0)
+    .attr('markerWidth',5).attr('markerHeight',5).attr('orient','auto')
+    .append('path').attr('d','M0,-4L8,0L0,4').attr('fill','#c5cad5');
+
+  defs.append('marker')
+    .attr('id','arr-hi').attr('viewBox','0 -4 8 8')
+    .attr('refX',4).attr('refY',0)
+    .attr('markerWidth',5).attr('markerHeight',5).attr('orient','auto')
+    .append('path').attr('d','M0,-4L8,0L0,4').attr('fill','#1456f0');
+
+  // per-node glow filters (intensity = read count)
+  // 缩小 filter 区域，避免光晕溢出覆盖相邻节点
+  KG_NODES.forEach(n => {
+    const spread = glowSigma(n) * 3;
+    const f = defs.append('filter').attr('id','glow-'+n.id)
+      .attr('x', `-${spread}%`).attr('y', `-${spread}%`)
+      .attr('width', `${100+spread*2}%`).attr('height', `${100+spread*2}%`);
+    f.append('feGaussianBlur').attr('stdDeviation', glowSigma(n)).attr('result','blur');
+    f.append('feFlood').attr('flood-color', n.color).attr('flood-opacity', glowOpacity(n)).attr('result','color');
+    f.append('feComposite').attr('in','color').attr('in2','blur').attr('operator','in').attr('result','glow');
+    const fm = f.append('feMerge');
+    fm.append('feMergeNode').attr('in','glow');
+    fm.append('feMergeNode').attr('in','SourceGraphic');
+  });
+
+  // highlight glow (for selected) — 较小范围
+  const fh = defs.append('filter').attr('id','glow-sel').attr('x','-25%').attr('y','-25%').attr('width','150%').attr('height','150%');
+  fh.append('feGaussianBlur').attr('stdDeviation',5).attr('result','blur');
+  fh.append('feFlood').attr('flood-color','#1456f0').attr('flood-opacity',.5).attr('result','color');
+  fh.append('feComposite').attr('in','color').attr('in2','blur').attr('operator','in').attr('result','glow');
+  const fhm = fh.append('feMerge');
+  fhm.append('feMergeNode').attr('in','glow');
+  fhm.append('feMergeNode').attr('in','SourceGraphic');
+
+  // ── Simulation ────────────────────────────────────────────────
+  const nodes = KG_NODES.map(d => ({ ...d }));
+  const links = KG_LINKS.map(d => ({ ...d }));
+
+  const filterState = { "JS Syntax":true, "JS Builtin":true, "JS Pattern":true };
+
+  function visNodes() { return nodes.filter(n => filterState[n.type]); }
+  function visLinks() {
+    const vs = new Set(visNodes().map(n => n.id));
+    return links.filter(l => {
+      const s = typeof l.source==='object'?l.source.id:l.source;
+      const t = typeof l.target==='object'?l.target.id:l.target;
+      return vs.has(s) && vs.has(t);
+    });
+  }
+
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d=>d.id).distance(180).strength(.45))
+    .force('charge', d3.forceManyBody().strength(-520))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collision', d3.forceCollide(d => nodeHalfW(d) + pulseAmpl(d) + 12));
+
+  // ── Zoom ──────────────────────────────────────────────────────
+  const g = svg.append('g');
+  const zoom = d3.zoom().scaleExtent([.2,3]).on('zoom', e => g.attr('transform', e.transform));
+  svg.call(zoom);
+  svg.on('click', () => { clearHL(); closeDetail(); hidePreview(); });
+
+  // ── Links ─────────────────────────────────────────────────────
+  const linkG = g.append('g');
+
+  let linkGrp = linkG.selectAll('g.lg').data(links).enter().append('g').attr('class','lg');
+  let linkLine = linkGrp.append('line')
+    .attr('stroke','#d1d5db').attr('stroke-width',1.5)
+    .attr('marker-end','url(#arr)').attr('opacity',.8);
+  let linkLbl = linkGrp.append('text')
+    .attr('font-size',10).attr('fill','#9ca3af').attr('text-anchor','middle')
+    .text(d=>d.label);
+
+  // ── Nodes ─────────────────────────────────────────────────────
+  const nodeG = g.append('g');
+
+  let nodeGrp = nodeG.selectAll('g.ng').data(nodes).enter().append('g').attr('class','ng')
+    .attr('cursor','pointer')
+    .call(d3.drag()
+      .on('start', (e,d) => { if(!e.active) sim.alphaTarget(.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag',  (e,d) => { d.fx=e.x; d.fy=e.y; })
+      .on('end',   (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }))
+    .on('click', (e,d) => { e.stopPropagation(); clickNode(d); })
+    .on('mouseover', (e,d) => showPreview(e,d))
+    .on('mousemove', (e,d) => movePreview(e))
+    .on('mouseout',  () => hidePreview());
+
+  // Pulse ring: tight rect ring just outside the card border
+  nodeGrp.append('rect')
+    .attr('class','pulse-ring')
+    .attr('rx', 12).attr('ry', 12)
+    .attr('width',  d => nodeHalfW(d)*2 + pulseAmpl(d)*2)
+    .attr('height', d => nodeHalfH(d)*2 + pulseAmpl(d)*2)
+    .attr('x', d => -nodeHalfW(d) - pulseAmpl(d))
+    .attr('y', d => -nodeHalfH(d) - pulseAmpl(d))
+    .attr('fill', 'none')
+    .attr('stroke', d => d.color)
+    .attr('stroke-width', d => .8 + (d.reads/maxReads)*1.5)
+    .attr('opacity', d => .18 + (d.reads/maxReads)*.28);
+
+  // Card rect (white bg + colored border)
+  nodeGrp.append('rect')
+    .attr('rx',10).attr('ry',10)
+    .attr('width',  d => nodeHalfW(d)*2)
+    .attr('height', d => nodeHalfH(d)*2)
+    .attr('x', d => -nodeHalfW(d))
+    .attr('y', d => -nodeHalfH(d))
+    .attr('fill','#fff')
+    .attr('stroke', d => d.color)
+    .attr('stroke-width', d => 1.5 + d.inDegree * .5)
+    .attr('filter', d => `url(#glow-${d.id})`);
+
+  // Type label (small)
+  nodeGrp.append('text')
+    .attr('text-anchor','middle')
+    .attr('y', d => -nodeHalfH(d)/2 + 6)
+    .attr('font-size', 10)
+    .attr('fill', d => d.color)
+    .attr('font-weight','600')
+    .attr('opacity',.8)
+    .text(d => d.type);
+
+  // Node main label
+  nodeGrp.append('text')
+    .attr('text-anchor','middle')
+    .attr('dominant-baseline','middle')
+    .attr('font-size', d => 11 + d.inDegree * 1.2)
+    .attr('font-weight','700')
+    .attr('fill','#1f2329')
+    .text(d => d.label);
+
+  // Read count badge (bottom of card)
+  nodeGrp.append('text')
+    .attr('text-anchor','middle')
+    .attr('y', d => nodeHalfH(d) - 10)
+    .attr('font-size', 10)
+    .attr('fill','#9ca3af')
+    .text(d => `📖 ${(d.reads/1000).toFixed(1)}k`);
+
+  // ── Tick ──────────────────────────────────────────────────────
+  sim.on('tick', () => {
+    linkLine
+      .attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+      .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+    linkLbl
+      .attr('x',d=>(d.source.x+d.target.x)/2)
+      .attr('y',d=>(d.source.y+d.target.y)/2 - 6);
+    nodeGrp.attr('transform',d=>`translate(${d.x},${d.y})`);
+    applyVis();
+  });
+
+  // ── Visibility ────────────────────────────────────────────────
+  function applyVis() {
+    const vn = new Set(visNodes().map(n=>n.id));
+    nodeGrp.attr('display', d => vn.has(d.id) ? null : 'none');
+    linkGrp.attr('display', d => {
+      const s = typeof d.source==='object'?d.source.id:d.source;
+      const t = typeof d.target==='object'?d.target.id:d.target;
+      return (vn.has(s)&&vn.has(t)) ? null : 'none';
+    });
+    document.getElementById('g-stat').textContent =
+      `${visNodes().length} 节点 · ${visLinks().length} 关系`;
+    document.getElementById('node-count').textContent = visNodes().length;
+  }
+
+  // ── Highlight ─────────────────────────────────────────────────
+  let selId = null;
+  function clickNode(d) { selId=d.id; hlNode(d); openDetail(d); }
+
+  function hlNode(d) {
+    const conn = new Set([d.id]);
+    links.forEach(l => {
+      const s=typeof l.source==='object'?l.source.id:l.source;
+      const t=typeof l.target==='object'?l.target.id:l.target;
+      if (s===d.id) conn.add(t);
+      if (t===d.id) conn.add(s);
+    });
+    nodeGrp.selectAll('rect').attr('opacity', n => conn.has(n.id) ? 1 : .25);
+    nodeGrp.filter(n=>n.id===d.id).selectAll('rect').attr('filter','url(#glow-sel)');
+    nodeGrp.filter(n=>n.id!==d.id).selectAll('rect').attr('filter', n=>`url(#glow-${n.id})`);
+    linkLine.attr('opacity', l => {
+      const s=typeof l.source==='object'?l.source.id:l.source;
+      const t=typeof l.target==='object'?l.target.id:l.target;
+      return (s===d.id||t===d.id) ? 1 : .1;
+    }).attr('stroke', l => {
+      const s=typeof l.source==='object'?l.source.id:l.source;
+      const t=typeof l.target==='object'?l.target.id:l.target;
+      return (s===d.id||t===d.id) ? '#1456f0' : '#d1d5db';
+    }).attr('marker-end', l => {
+      const s=typeof l.source==='object'?l.source.id:l.source;
+      const t=typeof l.target==='object'?l.target.id:l.target;
+      return (s===d.id||t===d.id) ? 'url(#arr-hi)' : 'url(#arr)';
+    });
+    linkLbl.attr('fill', l => {
+      const s=typeof l.source==='object'?l.source.id:l.source;
+      const t=typeof l.target==='object'?l.target.id:l.target;
+      return (s===d.id||t===d.id) ? '#1456f0' : '#e5e7eb';
+    });
+  }
+
+  function clearHL() {
+    selId = null;
+    nodeGrp.selectAll('rect').attr('opacity',1).attr('filter',n=>`url(#glow-${n.id})`);
+    linkLine.attr('opacity',.8).attr('stroke','#d1d5db').attr('marker-end','url(#arr)');
+    linkLbl.attr('fill','#9ca3af');
+  }
+
+  // ── Hover preview card ────────────────────────────────────────
+  function showPreview(e, d) {
+    const tc = TYPE_BG[d.type] || { bg:'#f2f3f5', fg:'#4e5969' };
+    preview.innerHTML = `
+      <span class="np-type" style="background:${tc.bg};color:${tc.fg}">${d.type}</span>
+      <div class="np-name">${d.label}</div>
+      <div class="np-desc">${d.description.slice(0,80)}…</div>
+      <div class="np-stats">
+        <div class="np-stat"><span class="np-stat-val">${d.inDegree}</span><span class="np-stat-lbl">被引用</span></div>
+        <div class="np-stat"><span class="np-stat-val">${(d.reads/1000).toFixed(1)}k</span><span class="np-stat-lbl">阅读数</span></div>
+        <div class="np-stat"><span class="np-stat-val">${d.tags.length}</span><span class="np-stat-lbl">标签</span></div>
+      </div>`;
+    preview.classList.add('show');
+    movePreview(e);
+  }
+  function movePreview(e) {
+    const r = canvasEl.getBoundingClientRect();
+    let x = e.clientX - r.left + 14;
+    let y = e.clientY - r.top  - 10;
+    if (x + 270 > r.width)  x = e.clientX - r.left - 280;
+    if (y + 140 > r.height) y = e.clientY - r.top  - 150;
+    preview.style.left = x + 'px';
+    preview.style.top  = y + 'px';
+  }
+  function hidePreview() { preview.classList.remove('show'); }
+
+  // ── Detail panel ──────────────────────────────────────────────
+  function openDetail(d) {
+    detailEl.classList.add('open');
+    const tc = TYPE_BG[d.type] || { bg:'#f2f3f5', fg:'#4e5969' };
+    const tagsH = d.tags.map(t=>`<span class="d-chip">${t}</span>`).join('');
+    const relH  = (d.related||[]).map(r=>`
+      <li>
+        <a href="#" onclick="jumpNode('${r.id}');return false">${r.label}</a>
+        &nbsp;— ${r.desc}
+        <span class="d-rel-go" onclick="showDocView('${r.id}')">文档 ›</span>
+      </li>`).join('');
+    const citeH = (d.citations||[]).map(c=>`<li><a href="${c.url}" target="_blank">${c.label}</a></li>`).join('');
+    detailScrl.innerHTML = `
+      <div class="detail-header">
+        <div style="flex:1;min-width:0">
+          <span class="d-type" style="background:${tc.bg};color:${tc.fg}">${d.type}</span>
+          <div class="d-name">${d.label}</div>
+        </div>
+        <button class="detail-close" onclick="clearHL();closeDetail()">✕</button>
+      </div>
+      <div class="detail-body">
+        <div class="d-stats-row">
+          <div class="d-stat"><span class="d-stat-val">${d.inDegree}</span><span class="d-stat-lbl">被引用次数</span></div>
+          <div class="d-stat"><span class="d-stat-val">${(d.reads/1000).toFixed(1)}k</span><span class="d-stat-lbl">阅读次数</span></div>
+          <div class="d-stat"><span class="d-stat-val">${d.related.length}</span><span class="d-stat-lbl">相关概念</span></div>
+        </div>
+        <div class="d-desc">${d.description}</div>
+        <div class="d-tags">${tagsH}</div>
+        <a class="d-resource" href="${d.resource}" target="_blank">${d.resource}</a>
+        <div class="d-section">
+          <div class="d-sec-title">代码示例</div>
+          <div class="d-code"><pre>${d.code}</pre></div>
+        </div>
+        <div class="d-section">
+          <div class="d-sec-title">相关概念</div>
+          <ul class="d-rel-list">${relH}</ul>
+        </div>
+        <div class="d-section">
+          <div class="d-sec-title">引用来源</div>
+          <ul class="d-cite-list">${citeH}</ul>
+        </div>
+        <button class="d-full-btn" onclick="showDocView('${d.id}')">📄 查看完整文档</button>
+      </div>`;
+  }
+
+  function closeDetail() { detailEl.classList.remove('open'); }
+  window.closeDetail = closeDetail;
+
+  window.jumpNode = function(nodeId) {
+    const n = nodes.find(x=>x.id===nodeId);
+    if (n) { hlNode(n); openDetail(n); }
+  };
+
+  // ── Filter ────────────────────────────────────────────────────
+  window.toggleFilter = function(btn) {
+    filterState[btn.dataset.type] = !filterState[btn.dataset.type];
+    btn.classList.toggle('on', filterState[btn.dataset.type]);
+    sim.alpha(.1).restart();
+  };
+
+  // ── Graph search ──────────────────────────────────────────────
+  document.getElementById('g-search').addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    if (!q) { clearHL(); return; }
+    const match = nodes.find(n => n.label.toLowerCase().includes(q) || n.tags.some(t=>t.toLowerCase().includes(q)));
+    if (match) { hlNode(match); openDetail(match); }
+  });
+
+  // ── Reset ─────────────────────────────────────────────────────
+  window.resetLayout = function() {
+    nodes.forEach(n => { n.fx=null; n.fy=null; });
+    sim.alpha(.8).restart();
+    svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
+    clearHL(); closeDetail();
+  };
+
+  // ── Fullscreen ────────────────────────────────────────────────
+  let isFS = false;
+  window.toggleFS = function() {
+    const gv = document.getElementById('graph-view');
+    const btn = document.getElementById('fs-btn');
+    if (!isFS) {
+      gv.style.cssText='position:fixed;inset:0;z-index:9999;flex-direction:column;display:flex;';
+      btn.textContent='退出全屏'; isFS=true;
+    } else {
+      gv.style.cssText=''; btn.textContent='全屏'; isFS=false;
+    }
+    setTimeout(()=>{
+      W=canvasEl.clientWidth; H=canvasEl.clientHeight;
+      svg.attr('width',W).attr('height',H);
+      sim.force('center',d3.forceCenter(W/2,H/2)).alpha(.3).restart();
+    },50);
+  };
+
+  // ── Resize ────────────────────────────────────────────────────
+  new ResizeObserver(()=>{
+    W=canvasEl.clientWidth; H=canvasEl.clientHeight;
+    if(W>0&&H>0){ svg.attr('width',W).attr('height',H); sim.force('center',d3.forceCenter(W/2,H/2)).restart(); }
+  }).observe(canvasEl);
+
+  // expose for AI
+  window._hlNode = hlNode;
+  window._clearHL = clearHL;
+  window._nodes  = nodes;
+  window._openDetail = openDetail;
+})(); // end initGraph
+
+// ─── AI bar ──────────────────────────────────────────────────────
+const AI_MOCKS = {
+  default(q) { return `关于「${q}」：这是一个很好的问题。建议从图谱中查看相关节点的连线来了解概念之间的关系。`; },
+
+  "async/await 和 Promise 的区别？": () =>
+    `<b>async/await</b> 是 <span class="ai-hl" onclick="jumpNode('promise')">Promise</span> 的语法糖 —— 底层完全基于 Promise，只是让代码读起来更像同步风格。\n\n关键区别：<span class="ai-hl" onclick="jumpNode('async_await')">async/await</span> 通过 try/catch 处理错误，Promise 用 .catch()；async/await 更易调试（堆栈更清晰）。两者可混用。`,
+
+  "哪些概念和 Closure 相关？": () =>
+    `<span class="ai-hl" onclick="jumpNode('closure')">Closure（闭包）</span> 在图谱中与两个概念直接相连：\n• <span class="ai-hl" onclick="jumpNode('arrow_function')">Arrow Functions</span> — 词法 this 本质上通过闭包机制实现\n• <span class="ai-hl" onclick="jumpNode('let_const')">let / const</span> — 块级作用域让闭包行为更可预测\n\n此外 <span class="ai-hl" onclick="jumpNode('async_await')">async/await</span> 的回调中也常利用闭包捕获外部状态。`,
+
+  "最基础的核心概念是哪个？": () =>
+    `从「被引用次数」来看，<span class="ai-hl" onclick="jumpNode('arrow_function')">Arrow Functions</span> 被引用 <b>4 次</b>，是图谱中被依赖最多的基础概念 —— 节点也最大。\n\n<span class="ai-hl" onclick="jumpNode('promise')">Promise</span> 其次（3 次），是整个异步体系的核心状态机。`,
+
+  "Arrow Functions 被引用了几次？": () =>
+    `<span class="ai-hl" onclick="jumpNode('arrow_function')">Arrow Functions</span> 在当前图谱中被引用了 <b>4 次</b>（被 async/await、Promise、Closure、Destructuring 引用），是被引用最多的节点，对应图谱中最大的节点。`,
+};
+
+function askAI(q) {
+  document.getElementById('ai-input').value = q;
+  sendAI();
+}
+function handleAIKey(e) {
+  if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendAI(); }
+}
+function sendAI() {
+  const input = document.getElementById('ai-input');
+  const q = input.value.trim();
+  if (!q) return;
+  const reply = document.getElementById('ai-reply');
+  reply.classList.add('show');
+
+  const fn = AI_MOCKS[q] || (() => AI_MOCKS.default(q));
+  const text = fn();
+  // typewriter effect
+  reply.innerHTML = '';
+  let i=0;
+  const raw = text.replace(/\n/g,'<br>');
+  // strip tags for typing
+  const tmp = document.createElement('div');
+  tmp.innerHTML = raw;
+  const plain = tmp.textContent;
+  reply.innerHTML = raw; // just show directly for HTML content
+  input.value = '';
+
+  // highlight nodes mentioned
+  const mentionMap = {
+    'async/await': 'async_await', 'Promise': 'promise',
+    'Arrow Functions': 'arrow_function', 'Closure': 'closure',
+    'let / const': 'let_const', 'Destructuring': 'destructuring',
+  };
+  Object.entries(mentionMap).forEach(([label, id]) => {
+    if (text.includes(label) && window._nodes) {
+      const n = window._nodes.find(x=>x.id===id);
+      if (n) { setTimeout(()=>{ window._hlNode && window._hlNode(n); }, 300); }
+    }
+  });
+}
+</script>
+</body>
+</html>
