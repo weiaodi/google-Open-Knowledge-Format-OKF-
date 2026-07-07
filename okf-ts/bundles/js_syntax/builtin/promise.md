@@ -1,247 +1,321 @@
 ---
 type: JS Builtin
 title: Promise
-description: 代表异步操作最终完成或失败的对象，是 JavaScript 异步编程的核心构建块
-tags:
-  - ES6
-  - async
-  - then
-  - catch
-  - 微任务
-  - 异步
+description: 代表异步操作最终完成或失败的对象，是 async/await 的底层机制
 resource: >-
   https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise
-timestamp: '2026-07-06T09:38:52.049Z'
+tags:
+  - ES6
+  - then
+  - catch
+  - finally
+  - Promise.all
+  - Promise.race
+  - pending
+  - fulfilled
+  - rejected
+  - asynchronous
+  - Promise.allSettled
+  - Promise.any
+  - microtask
+  - thenable
+timestamp: '2026-07-07T03:23:29.142Z'
 ---
+
 
 ## 概述
 
-`Promise` 是 ES6 引入的异步编程核心机制，用于表示一个尚未完成但预期在未来完成的异步操作的结果。它解决了传统回调地狱（callback hell）问题，提供了统一的 `.then()`、`.catch()` 和 `.finally()` 链式调用接口。Promise 有三种状态：**pending**（待定）、**fulfilled**（已兑现）和 **rejected**（已拒绝），状态一旦确定便不可逆转。
-
-在实际开发中，Promise 广泛用于网络请求（`fetch`）、文件读写、定时器、数据库查询等场景。自 ES2017 起，`async/await` 语法进一步简化了 Promise 的使用，但理解 Promise 本身的机制仍是掌握 JavaScript 异步编程的关键。
+Promise 是 ES6 引入的异步编程核心机制，代表一个尚未完成但**未来会确定**的值。它有三种状态：`pending`（待定）、`fulfilled`（已完成）和 `rejected`（已拒绝）。Promise 的出现解决了传统回调嵌套（Callback Hell）的问题，提供了链式调用的优雅语法，同时也是 `async/await` 语法的底层基石。当你需要处理网络请求、文件读取、定时器或其他异步操作时，Promise 是标准的选择。
 
 ## Syntax
 
-### 创建 Promise
-
 ```javascript
-new Promise((resolve, reject) => {
+// 创建一个 Promise
+new Promise(executor);
+
+// executor 签名
+function(resolve, reject) {
   // 异步操作
-  if (/* 成功 */) {
-    resolve(value);   // 将状态切换为 fulfilled
-  } else {
-    reject(error);    // 将状态切换为 rejected
-  }
-});
+  // 成功时调用 resolve(value)
+  // 失败时调用 reject(reason)
+}
 ```
 
-### 消费 Promise
+**Promise 实例方法：**
 
 ```javascript
-promise
-  .then(onFulfilled)       // 处理兑现状态
-  .catch(onRejected)       // 处理拒绝状态
-  .finally(onFinally);     // 无论兑现或拒绝都会执行
+promise.then(onFulfilled, onRejected);
+promise.catch(onRejected);
+promise.finally(onFinally);
 ```
 
-### 静态方法
+**静态方法：**
 
 ```javascript
-Promise.all(iterable);      // 全部兑现才兑现，任一拒绝即拒绝
-Promise.allSettled(iterable); // 等待所有完成，不关心兑现或拒绝
-Promise.race(iterable);     // 第一个完成的 Promise 的结果
-Promise.any(iterable);      // 第一个兑现的 Promise 的结果
-Promise.resolve(value);     // 包装一个值成为已兑现的 Promise
-Promise.reject(reason);     // 创建一个已拒绝的 Promise
+Promise.all(iterable);
+Promise.allSettled(iterable);
+Promise.race(iterable);
+Promise.any(iterable);
+Promise.resolve(value);
+Promise.reject(reason);
+Promise.try(callback);     // ES2025 — 包装任意回调（同步/异步）为 Promise
+Promise.withResolvers();   // ES2024 — 返回 { promise, resolve, reject }
 ```
 
 ## Examples
 
-### 示例 1：基础用法 —— 用 Promise 封装 setTimeout
+### 基础用法：模拟网络请求
 
 ```javascript
-function delay(ms) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(`等待了 ${ms} 毫秒`);
-    }, ms);
-  });
-}
-
-// 使用
-delay(1000).then((message) => {
-  console.log(message); // 1 秒后输出: "等待了 1000 毫秒"
-});
-```
-
-### 示例 2：链式调用与错误处理
-
-```javascript
-// 模拟一个可能失败的网络请求
-function fetchUserData(userId) {
+// 模拟一个异步 API 请求
+function fetchUser(id) {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
-      if (userId > 0) {
-        resolve({ id: userId, name: 'Alice' });
+      if (id > 0) {
+        resolve({ id, name: '张三', age: 25 });
       } else {
         reject(new Error('无效的用户 ID'));
       }
-    }, 500);
+    }, 1000);
   });
 }
 
-fetchUserData(1)
-  .then((user) => {
-    console.log('用户数据:', user);
-    // 返回一个新 Promise 来继续链式调用
-    return fetchUserData(user.id + 1);
-  })
-  .then((nextUser) => {
-    console.log('下一个用户:', nextUser);
-  })
-  .catch((error) => {
-    console.error('出错了:', error.message); // 如果 userId <= 0，这里捕获错误
-  })
-  .finally(() => {
-    console.log('请求结束（无论成功与否）');
-  });
+// 使用 Promise
+fetchUser(1)
+  .then(user => console.log('用户:', user))
+  .catch(err => console.error('错误:', err.message));
+// 1 秒后输出: 用户: { id: 1, name: '张三', age: 25 }
 ```
 
-### 示例 3：Promise.all 并发请求
+### Promise 链式调用
 
 ```javascript
-function fetchData(url) {
-  // 模拟 fetch API
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(`来自 ${url} 的数据`), Math.random() * 1000);
-  });
+// 链式调用避免回调地狱
+function step1(value) {
+  return Promise.resolve(value + 1);
 }
 
-// 同时发起三个请求，等待全部完成
-Promise.all([
-  fetchData('/api/users'),
-  fetchData('/api/posts'),
-  fetchData('/api/comments'),
-])
-  .then(([users, posts, comments]) => {
-    console.log('全部数据已就绪:');
-    console.log(users);
-    console.log(posts);
-    console.log(comments);
-  })
-  .catch((error) => {
-    // 只要任意一个请求失败，整个 Promise.all 就会拒绝
-    console.error('请求失败:', error);
-  });
+function step2(value) {
+  return Promise.resolve(value * 2);
+}
+
+function step3(value) {
+  return Promise.resolve(value - 3);
+}
+
+step1(5)
+  .then(result => step2(result))  // 6 → 12
+  .then(result => step3(result))  // 12 → 9
+  .then(final => console.log('最终结果:', final))  // 输出: 9
+  .catch(err => console.error('出错了:', err));
 ```
 
-### 示例 4：Promise.race 实现超时控制
+### Promise.all 与 Promise.race
 
 ```javascript
-function fetchWithTimeout(url, timeoutMs) {
-  const fetchPromise = new Promise((resolve) => {
-    setTimeout(() => resolve(`从 ${url} 获取的数据`), 2000);
-  });
+// 模拟多个并发的 API 请求
+const fetchUser = Promise.resolve({ id: 1, name: 'Alice' });
+const fetchPosts = new Promise(resolve =>
+  setTimeout(() => resolve(['post1', 'post2']), 500)
+);
+const fetchComments = new Promise(resolve =>
+  setTimeout(() => resolve(['comment1']), 1000)
+);
 
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('请求超时')), timeoutMs);
-  });
+// Promise.all: 等待所有 Promise 完成（一个失败则整体失败）
+Promise.all([fetchUser, fetchPosts, fetchComments])
+  .then(([user, posts, comments]) => {
+    console.log('全部完成:', { user, posts, comments });
+  })
+  .catch(err => console.error('有请求失败:', err));
 
-  // 谁先完成就用谁的结果
-  return Promise.race([fetchPromise, timeoutPromise]);
-}
-
-fetchWithTimeout('/api/data', 1000)
-  .then((data) => console.log(data))
-  .catch((err) => console.error(err.message)); // 1 秒后输出: "请求超时"
+// Promise.race: 返回最先完成的 Promise（无论成功或失败）
+Promise.race([fetchPosts, fetchComments])
+  .then(first => console.log('最快返回的数据:', first));
+// 输出: 最快返回的数据: ['post1', 'post2'] (因为 500ms < 1000ms)
 ```
+
+### 错误处理的最佳实践
+
+```javascript
+// 在链式末尾统一处理错误
+fetch('https://api.example.com/data')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`HTTP 错误! 状态码: ${response.status}`);
+    }
+    return response.json();
+  })
+  .then(data => console.log('数据:', data))
+  // 一个 catch 捕获链中任何位置的错误
+  .catch(err => console.error('请求失败:', err.message))
+  // finally 总会执行（无论成功/失败），适合做清理工作
+  .finally(() => console.log('请求结束，关闭加载状态'));
+```
+
+### 浮空 Promise 问题（Floating Promises）
+
+```javascript
+// ❌ 错误：没有 return，下一个 then 无法追踪结果
+doSomething()
+  .then((url) => {
+    fetch(url);  // 缺少 return！
+  })
+  .then((result) => {
+    console.log(result); // undefined — fetch 的结果丢失了
+  });
+
+// ✅ 正确：始终 return Promise
+doSomething()
+  .then((url) => {
+    return fetch(url);
+  })
+  .then((result) => {
+    console.log(result); // Response 对象
+  });
+```
+
+### 使用 thenable 互操作
+
+```javascript
+// thenable 是具有 .then() 方法的对象，可与原生 Promise 互操作
+const thenable = {
+  then(onFulfilled, onRejected) {
+    onFulfilled(42);
+  },
+};
+
+Promise.resolve(thenable); // 解析为 Promise fulfilled with 42
+```
+
+### 使用 Promise.withResolvers（ES2024）
+
+```javascript
+// 无需在构造函数中嵌套，可直接从外部控制
+const { promise, resolve, reject } = Promise.withResolvers();
+
+setTimeout(() => resolve('完成!'), 1000);
+await promise; // 1 秒后返回 '完成!'
+```
+
+## 并发组合方法
+
+Promise 提供了四种并发工具来组合多个异步操作：
+
+| 方法 | 完成条件 | 失败条件 |
+|------|----------|----------|
+| `Promise.all()` | 所有 Promise 完成 | 任意一个拒绝 |
+| `Promise.allSettled()` | 所有 Promise 敲定（settled） | 永不拒绝 |
+| `Promise.any()` | 任意一个完成 | 全部拒绝 |
+| `Promise.race()` | 任意一个敲定（settled） | 任意一个拒绝 |
+
+```javascript
+// 顺序执行：用 reduce 构建链式调用
+[func1, func2, func3]
+  .reduce((p, f) => p.then(f), Promise.resolve())
+  .then((result3) => { /* use result3 */ });
+```
+
+## Promise 拒绝事件
+
+Web 平台会在全局作用域派发两种事件，用于捕获未处理的 Promise 拒绝：
+
+```javascript
+// 捕获未被 catch 的拒绝
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('未处理的 Promise 拒绝:', event.reason);
+  event.preventDefault(); // 阻止默认的控制台警告
+});
+
+// 当拒绝被延迟处理时触发
+window.addEventListener('rejectionhandled', (event) => {
+  console.log('拒绝已被处理:', event.reason);
+});
+```
+
+Node.js 中对应 `process.on('unhandledRejection', ...)`。
 
 ## Key Points
 
-1. **状态不可逆**：Promise 只能从 `pending` 变为 `fulfilled` 或 `rejected`，一旦改变就永远固定，不可再次变更。
-2. **微任务（microtask）执行**：`.then()`、`.catch()` 和 `.finally()` 的回调在微任务队列中执行，优先级高于宏任务（如 `setTimeout`）。
-3. **值穿透**：在 `.then()` 中返回一个普通值（非 Promise），该值会被自动包裹成 `Promise.resolve(value)`，传递给下一个 `.then()`。
-4. **错误冒泡**：链式调用中，如果某个 `.then()` 没有 catch 住错误，错误会一直向下冒泡，直到被 `.catch()` 捕获。
-5. **`finally` 不接收参数**：`.finally()` 的回调不接受任何参数，也无法知道 Promise 是兑现还是拒绝，它只用于执行收尾工作。
-6. **`then` 返回新 Promise**：每次调用 `.then()` 都会返回一个新的 Promise，这是链式调用的基础。
+1. **状态不可逆**：Promise 一旦从 `pending` 变为 `fulfilled` 或 `rejected`，就**永久锁定**在该状态，无法再次改变。
+2. **then/catch 始终返回新 Promise**：每次调用 `.then()` 或 `.catch()` 都会创建并返回一个新的 Promise，这才是链式调用的基础。
+3. **微任务执行**：`then/catch/finally` 的回调在**微任务队列**中执行，优先级高于 `setTimeout` 等宏任务。
+4. **错误穿透**：链式调用中，如果某个 `.then()` 没有提供 `onRejected` 处理器，异常会**自动传递**到下一个 `.catch()`。
+5. **值透传**：如果 `.then()` 传入的不是函数（如 `null`），Promise 会把接收到的值**直接透传**到下一个 `.then()`。
+6. **`new Promise` 内的代码会同步执行**：executor 函数是**立即执行**的（synchronous），只有 `.then()` 的回调才是异步执行的。
+7. **回调保证**：`.then()` 的回调永远不会在当前同步代码完成前被调用，即使 Promise 已经 settled——这避免了一致性问题（Zalgo 状态）。
 
 ## Common Mistakes
 
-1. **忘记 `return` 导致链断裂**
+1. **忘记 return Promise 导致链式断裂**
 
 ```javascript
-// ❌ 错误：没有 return，下一个 then 拿到的值是 undefined
-Promise.resolve(1)
-  .then((val) => {
-    val + 1; // 忘记 return
+// ❌ 错误：忘记 return，下一个 then 收到的值是 undefined
+fetchUser(1)
+  .then(data => {
+    processUser(data);  // 这里没有 return
   })
-  .then((val) => {
-    console.log(val); // undefined！
+  .then(result => {
+    console.log(result); // undefined!
   });
 
-// ✅ 正确：显式 return
-Promise.resolve(1)
-  .then((val) => {
-    return val + 1;
+// ✅ 正确：始终 return Promise
+fetchUser(1)
+  .then(data => {
+    return processUser(data); // 返回 Promise
   })
-  .then((val) => {
-    console.log(val); // 2
+  .then(result => {
+    console.log(result); // 正确处理结果
   });
 ```
 
-2. **在 Promise 外部同步抛出错误无法被 catch**
+2. **在 Promise 中抛出非 Error 对象**
 
 ```javascript
-// ❌ 错误：new Promise 中的同步 throw 不会被外层 try/catch 捕获
-try {
-  new Promise(() => {
-    throw new Error('失败');
-  });
-} catch (e) {
-  // 这里捕获不到！
-}
+// ❌ 错误：抛出普通字符串，丢失调用栈信息
+new Promise((_, reject) => {
+  reject('出错了'); // 字符串，非 Error 对象
+}).catch(err => {
+  console.log(err.name); // undefined
+  console.log(err.stack); // undefined
+});
 
-// ✅ 正确：使用 .catch() 或在 executor 中调用 reject()
+// ✅ 正确：始终 reject Error 对象
+new Promise((_, reject) => {
+  reject(new Error('出错了')); // Error 对象，保留调用栈
+}).catch(err => {
+  console.log(err.message); // '出错了'
+  console.log(err.stack);   // 完整的堆栈追踪
+});
+```
+
+3. **没有 catch 导致未捕获的 Promise 异常**
+
+```javascript
+// ❌ 危险：rejected 的 Promise 没有被捕获
 new Promise((_, reject) => {
   reject(new Error('失败'));
-}).catch((e) => {
-  console.error(e.message); // "失败"
-});
-```
+})
+  .then(data => console.log(data));
+// UnhandledPromiseRejectionWarning! 在 Node.js 中会导致进程退出
 
-3. **在 `forEach` / `for` 循环中错误地串行化请求**
-
-```javascript
-const urls = ['/a', '/b', '/c'];
-
-// ❌ 错误：forEach 不会等待 Promise 完成，所有请求同时发出
-urls.forEach(async (url) => {
-  const data = await fetch(url);
-  console.log(data);
-});
-
-// ✅ 正确：使用 reduce 链式串行
-await urls.reduce(async (prevPromise, url) => {
-  await prevPromise;
-  const data = await fetch(url);
-  console.log(data);
-}, Promise.resolve());
-
-// 或者使用 for...of（推荐）
-for (const url of urls) {
-  const data = await fetch(url);
-  console.log(data);
-}
+// ✅ 正确：始终添加 catch 处理器
+new Promise((_, reject) => {
+  reject(new Error('失败'));
+})
+  .then(data => console.log(data))
+  .catch(err => console.error('已处理:', err.message));
 ```
 
 ## Related Concepts
 
-- [Async/Await](../syntax/async_await.md) —— 基于 Promise 的语法糖，用同步风格编写异步代码
-- [异步编程基础](../topics/async.md) —— 事件循环、微任务与宏任务、回调机制
-- [函数](../topics/functions.md) —— Promise executor 中函数作为一等公民的使用方式
+- [Async/Await 参考](../references/async_function.md) — `async function` 声明语法与执行模型
+- [异步编程](../topics/async.md) —— 深入理解事件循环、微任务与宏任务
+- [箭头函数](../syntax/arrow_function.md) —— 常用在 Promise 链中保持 `this` 绑定
 
 ## Citations
 
 - [MDN: Promise](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise)
-- [ECMAScript 2015 (ES6) Specification - Promise Objects](https://262.ecma-international.org/6.0/#sec-promise-objects)
-- [JavaScript 事件循环: 微任务与宏任务 - HTML Standard](https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model)
+- [MDN: Using promises](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises)
+- [MDN: async function](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function)
+- [ECMAScript 2015 (ES6) Specification — Promise Objects](https://262.ecma-international.org/6.0/#sec-promise-objects)

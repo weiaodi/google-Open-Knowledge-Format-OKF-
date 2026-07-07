@@ -11,6 +11,7 @@
 
 import { getContext } from "../context.js";
 import type { ToolDef } from "../llmRunner.js";
+import { parseConceptId } from "../bundle/paths.js";
 
 /** 列出数据源中所有概念 */
 export const listConceptsTool: ToolDef = {
@@ -53,5 +54,53 @@ export const readConceptRawTool: ToolDef = {
   fn: ({ concept_id }) => {
     const { source } = getContext();
     return source.readConcept(concept_id as string);
+  },
+};
+
+/** 采样概念的行数据（用于有实际数据的 Source，如 SQLite / BigQuery） */
+export const sampleRowsTool: ToolDef = {
+  name: "sample_rows",
+  description:
+    "Pull a small sample of rows from the underlying asset, if supported by the source. " +
+    "Returns {rows: [...], note: string}. rows is empty and note explains why if sampling is not supported. " +
+    'concept_id is the slash-joined id from list_concepts (e.g. "tables/users"). ' +
+    "n is the number of rows to sample (default 5).",
+  parameters: {
+    type: "object",
+    properties: {
+      concept_id: {
+        type: "string",
+        description: 'Slash-joined concept id, e.g. "tables/users"',
+      },
+      n: {
+        type: "number",
+        description: "Number of rows to sample (default 5)",
+      },
+    },
+    required: ["concept_id"],
+  },
+  fn: ({ concept_id, n }) => {
+    const { source } = getContext();
+    const idParts = parseConceptId(concept_id as string);
+    const ref = source.find(idParts);
+    if (!ref) {
+      return { rows: [], note: `Unknown concept: ${concept_id}` };
+    }
+    if (!source.sampleRows) {
+      return { rows: [], note: "Sampling is not supported by this source." };
+    }
+    try {
+      const rows = source.sampleRows(ref.idStr, typeof n === "number" ? n : 5);
+      if (rows === null) {
+        return { rows: [], note: "Sampling is not supported for this concept." };
+      }
+      // 所有值转为字符串（与 Python 版对齐）
+      const coerced = rows.map((row) =>
+        Object.fromEntries(Object.entries(row).map(([k, v]) => [k, String(v)]))
+      );
+      return { rows: coerced, note: "" };
+    } catch (e) {
+      return { rows: [], note: `Sampling failed: ${String(e)}` };
+    }
   },
 };

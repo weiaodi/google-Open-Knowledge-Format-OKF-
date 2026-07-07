@@ -16,7 +16,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { getContext } from "../context.js";
+import { getContext, isWebPass } from "../context.js";
 import { parseOKF, serializeOKF } from "../bundle/document.js";
 import { conceptIdToPath, parseConceptId } from "../bundle/paths.js";
 import type { ToolDef } from "../llmRunner.js";
@@ -50,6 +50,28 @@ export const readExistingDocTool: ToolDef = {
     }
   },
 };
+
+// ── Web Pass 增量保护工具函数 ─────────────────────────────────────────────────
+
+/** 统计 Markdown body 中某个顶级 `# Heading` 下的非空行数 */
+function sectionLineCount(body: string, heading: string): number {
+  let inSection = false;
+  let count = 0;
+  for (const line of body.split("\n")) {
+    const stripped = line.trim();
+    if (stripped.startsWith("# ")) {
+      inSection = stripped === heading;
+      continue;
+    }
+    if (inSection && stripped) count++;
+  }
+  return count;
+}
+
+/** 统计 # Citations 下的条目数 */
+function citationCount(body: string): number {
+  return sectionLineCount(body, "# Citations");
+}
 
 /** 将 LLM 生成的文档写入磁盘 */
 export const writeConceptDocTool: ToolDef = {
@@ -99,20 +121,38 @@ export const writeConceptDocTool: ToolDef = {
     const idParts = parseConceptId(concept_id as string);
     const filePath = conceptIdToPath(bundleRoot, idParts);
 
-    // 反退化保护：新 body 不能比现有 body 短超过 30%
+    // 反退化保护 + Web Pass 增量保护
     if (fs.existsSync(filePath)) {
       try {
         const existing = parseOKF(fs.readFileSync(filePath, "utf-8"));
         const existingLen = existing.body.length;
         const newLen = (body as string).length;
+
+        // 通用退化保护：新 body 不能比现有 body 短超过 30%
         if (newLen < existingLen * 0.7) {
           return {
             status: "rejected",
             reason: `New body (${newLen} chars) is significantly shorter than existing (${existingLen} chars). Aborting to prevent regression.`,
           };
         }
+
+        // Web Pass 增量保护：# Citations 数量不能减少（对应 Python bundle_tools.py）
+        if (isWebPass()) {
+          const oldCites = citationCount(existing.body);
+          const newCites = citationCount(body as string);
+          if (newCites < oldCites) {
+            return {
+              status: "rejected",
+              reason:
+                `Refusing to write: the existing # Citations section had ${oldCites} entries, ` +
+                `but your new # Citations has only ${newCites}. ` +
+                `Append your new citation rather than replacing the list. ` +
+                `Re-call write_concept_doc with every existing entry preserved plus the new one.`,
+            };
+          }
+        }
       } catch {
-        // 如果读取失败就跳过退化检查
+        // 如果读取失败就跳过保护检查
       }
     }
 

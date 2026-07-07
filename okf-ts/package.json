@@ -9,9 +9,11 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/turndown": "^5.0.6",
     "commander": "^12.1.0",
     "js-yaml": "^4.1.0",
-    "openai": "^4.67.0"
+    "openai": "^4.67.0",
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
