@@ -23,22 +23,19 @@ const DetailPanel: React.FC = () => {
           <h2 className={styles.title}>{node.label}</h2>
           <p className={styles.desc}>{node.description}</p>
 
-          {/* Stats */}
           <div className={styles.stats}>
-            <span>🔗 被引用 <b>{node.inDegree ?? 0}</b> 次</span>
-            <span>📖 阅读 <b>{(node.reads / 1000).toFixed(1)}k</b></span>
-            <span>🏷 标签 <b>{node.tags.length}</b></span>
+            <span>被引用 <b>{node.inDegree ?? 0}</b> 次</span>
+            <span>阅读 <b>{(node.reads / 1000).toFixed(1)}k</b></span>
+            <span>⏱ <b>{node.learnMins}</b> 分钟</span>
           </div>
 
-          {/* Tags */}
           <div className={styles.tags}>
             {node.tags.map(t => <span key={t} className={styles.tag}>{t}</span>)}
           </div>
 
-          {/* Edge relationships */}
           {cLinks.length > 0 && (
             <section className={styles.section}>
-              <div className={styles.sectionTitle}>因果关系</div>
+              <div className={styles.sectionTitle}>节点关系 · {cLinks.length} 条</div>
               {cLinks.map((l, i) => {
                 const isOut = l.source === node.id
                 const otherNode = nodes.find(n => n.id === (isOut ? l.target : l.source))
@@ -47,18 +44,15 @@ const DetailPanel: React.FC = () => {
                     <span className={styles.edgeDot} style={{ background: EDGE_TYPE_COLOR[l.type] }} />
                     <div className={styles.edgeInfo}>
                       <div className={styles.edgeMeta}>
-                        <span className={styles.edgeDir}>{isOut ? '→' : '←'}</span>
-                        <span
-                          className={styles.edgeNode}
-                          onClick={() => otherNode && selectNode(otherNode.id)}
-                        >
-                          {otherNode?.label}
-                        </span>
                         <span
                           className={styles.edgeType}
-                          style={{ color: EDGE_TYPE_COLOR[l.type] }}
+                          style={{ color: EDGE_TYPE_COLOR[l.type], borderColor: EDGE_TYPE_COLOR[l.type] }}
                         >
                           {EDGE_TYPE_LABEL[l.type]}
+                        </span>
+                        <span className={styles.edgeDir}>{isOut ? '→' : '←'}</span>
+                        <span className={styles.edgeNode} onClick={() => otherNode && selectNode(otherNode.id)}>
+                          {otherNode?.label}
                         </span>
                       </div>
                       <p className={styles.edgeDesc}>{l.description}</p>
@@ -69,7 +63,6 @@ const DetailPanel: React.FC = () => {
             </section>
           )}
 
-          {/* Key points */}
           <section className={styles.section}>
             <div className={styles.sectionTitle}>要点</div>
             <ul className={styles.keyPoints}>
@@ -79,7 +72,6 @@ const DetailPanel: React.FC = () => {
             </ul>
           </section>
 
-          {/* Related */}
           <section className={styles.section}>
             <div className={styles.sectionTitle}>相关概念</div>
             {node.related.map(r => (
@@ -92,7 +84,6 @@ const DetailPanel: React.FC = () => {
             ))}
           </section>
 
-          {/* Citations */}
           {node.citations.length > 0 && (
             <section className={styles.section}>
               <div className={styles.sectionTitle}>引用来源</div>
@@ -105,7 +96,7 @@ const DetailPanel: React.FC = () => {
           )}
 
           <button className={styles.viewDoc} onClick={() => openDoc(node.id)}>
-            📄 查看完整文档
+            查看完整文档
           </button>
         </>
       )}

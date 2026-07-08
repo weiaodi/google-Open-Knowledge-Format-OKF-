@@ -1,241 +1,260 @@
+/* ── Wrapper ── */
 .wrap {
   position: relative;
+  display: inline-flex;
 }
 
+/* ── Trigger button ── */
 .trigger {
   height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
+  padding: 0 11px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
   font-size: 12px;
-  background: var(--color-surface);
-  color: #4e5969;
+  background: var(--c-surface);
+  color: var(--c-text-2);
   cursor: pointer;
+  font-family: var(--font);
+  transition: all .15s;
+  white-space: nowrap;
+  letter-spacing: -.01em;
   display: flex;
   align-items: center;
   gap: 5px;
-  transition: all .14s;
-  white-space: nowrap;
 }
-
 .trigger:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  background: var(--c-surface-2);
+  border-color: #c8cdd5;
 }
 
+/* Badge on trigger */
 .badge {
-  background: var(--color-primary);
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 8px;
+  background: #f59e0b;
+  color: #fff;
   font-size: 10px;
-  padding: 0 5px;
   font-weight: 700;
+  line-height: 1;
 }
 
-/* Panel */
+/* ── Panel popup ── */
 .panel {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
-  width: 300px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  left: 0;
   z-index: 500;
-  padding: 12px;
-  max-height: 480px;
-  overflow-y: auto;
+  width: 304px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-popup);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
+/* ── Panel header ── */
 .header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  justify-content: space-between;
 }
-
 .title {
   font-size: 13px;
   font-weight: 700;
+  color: var(--c-text-1);
+  letter-spacing: -.01em;
 }
-
 .close {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
   border: none;
   background: none;
   cursor: pointer;
-  color: var(--color-subtle);
+  color: var(--c-text-4);
   font-size: 13px;
-  padding: 2px 6px;
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s;
+}
+.close:hover {
+  background: var(--c-surface-2);
+  color: var(--c-text-2);
 }
 
-.close:hover { background: #f2f3f5; }
-
+/* ── Target picker ── */
 .pickerLabel {
-  font-size: 11px;
-  color: var(--color-subtle);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  margin-bottom: 7px;
+  font-size: 11.5px;
+  color: var(--c-text-3);
+  font-weight: 500;
+  letter-spacing: -.01em;
 }
-
 .picker {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-bottom: 14px;
 }
-
 .pickBtn {
   font-size: 11.5px;
-  padding: 3px 9px;
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  background: #f7f8fa;
-  color: #4e5969;
+  padding: 3px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 20px;
+  background: var(--c-surface-2);
+  color: var(--c-text-2);
   cursor: pointer;
+  font-family: var(--font);
   transition: all .14s;
+  letter-spacing: -.01em;
 }
-
 .pickBtn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--c-blue);
+  color: var(--c-blue);
+  background: var(--c-blue-light);
 }
-
 .pickBtnOn {
-  background: #f0f5ff;
+  background: var(--c-blue-light);
   font-weight: 600;
 }
 
-/* Path */
+/* ── Path header ── */
 .pathHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
-  color: var(--color-subtle);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  margin-bottom: 8px;
-}
-
-.totalTime {
-  font-weight: 500;
-  color: var(--color-muted);
   font-size: 11.5px;
-  text-transform: none;
+  font-weight: 600;
+  color: var(--c-text-2);
+  padding-top: 2px;
+  border-top: 1px solid var(--c-border-light);
+}
+.totalTime {
+  font-size: 11px;
+  color: var(--c-text-3);
 }
 
+/* ── Steps ── */
 .path {
   display: flex;
   flex-direction: column;
   gap: 0;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .step {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
   cursor: pointer;
-  background: #fafafa;
-  transition: background .14s;
+  transition: background .12s, border-color .15s;
 }
-
 .step:hover {
-  background: var(--color-primary-light);
+  background: var(--c-surface-2);
 }
-
 .stepTarget {
-  background: #f0f5ff;
-  border-width: 2px;
+  background: #fffbf0;
+  border-color: #f59e0b !important;
 }
 
 .stepNum {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #e5e6eb;
+  flex-shrink: 0;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  color: #4e5969;
-  flex-shrink: 0;
+  line-height: 1;
+}
+.stepTarget .stepNum {
+  background: #e07d22;
 }
 
 .stepInfo {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
-
 .stepLabel {
   font-size: 12.5px;
   font-weight: 600;
+  color: var(--c-text-1);
+  line-height: 1.2;
 }
-
 .stepMeta {
-  font-size: 10.5px;
-  color: var(--color-subtle);
+  font-size: 11px;
+  color: var(--c-text-3);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
-
 .goalTag {
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 3px;
+  font-size: 9.5px;
   font-weight: 700;
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  letter-spacing: .02em;
 }
 
 .stepDot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
+/* Connector arrow between steps */
 .connector {
   text-align: center;
-  font-size: 12px;
-  color: #c5cad5;
+  font-size: 11px;
+  color: var(--c-text-4);
   line-height: 1.2;
-  padding: 1px 0;
+  pointer-events: none;
 }
 
+/* ── CTA ── */
 .highlight {
   width: 100%;
-  margin-top: 12px;
-  padding: 8px;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  background: var(--color-primary-light);
-  color: var(--color-primary);
+  height: 34px;
+  border: none;
+  border-radius: var(--r-md);
+  background: #f59e0b;
+  color: #fff;
   font-size: 12.5px;
   font-weight: 600;
+  font-family: var(--font);
   cursor: pointer;
   transition: background .15s;
+  letter-spacing: -.01em;
 }
-
 .highlight:hover {
-  background: #dce8ff;
+  background: #d97706;
 }
 
+/* ── Empty state ── */
 .empty {
-  font-size: 12.5px;
-  color: var(--color-muted);
+  font-size: 12px;
+  color: var(--c-text-4);
   text-align: center;
-  padding: 16px 8px;
   line-height: 1.6;
+  padding: 8px 0 4px;
 }

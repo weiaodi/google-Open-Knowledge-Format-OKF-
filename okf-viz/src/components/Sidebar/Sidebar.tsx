@@ -5,12 +5,10 @@ import styles from './Sidebar.module.css'
 
 const Sidebar: React.FC = () => {
   const { nodes, activeView, docNodeId, openDoc, backToGraph } = useGraphStore()
-
   const isGraphActive = activeView === 'graph'
 
   return (
     <aside className={styles.sidebar}>
-      {/* Search */}
       <div className={styles.search}>
         <span className={styles.searchIcon}>
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -18,18 +16,22 @@ const Sidebar: React.FC = () => {
             <path d="M11 11l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
           </svg>
         </span>
-        <input type="text" placeholder="搜索知识库文档" />
+        <input type="text" placeholder="搜索文档…" />
       </div>
 
       <div className={styles.inner}>
-        {/* Static items */}
-        <div className={styles.item}><span>🏠</span> 首页</div>
-        <div className={styles.item}><span>📋</span> 目录</div>
+        <div className={styles.item}><span>🏠</span>首页</div>
+        <div className={styles.item}><span>📋</span>目录</div>
+
         <div className={styles.divider} />
-        <div className={styles.item}><span>📄</span> 周报</div>
-        <div className={styles.item}><span>📁</span> 归档</div>
-        <div className={styles.item}><span>🤖</span> ai相关</div>
+        <div className={styles.sectionLabel}>文档</div>
+
+        <div className={styles.item}><span>📄</span>周报</div>
+        <div className={styles.item}><span>📁</span>归档</div>
+        <div className={styles.item}><span>🤖</span>AI 相关</div>
+
         <div className={styles.divider} />
+        <div className={styles.sectionLabel}>知识图谱</div>
 
         {/* KG parent */}
         <div
@@ -49,18 +51,15 @@ const Sidebar: React.FC = () => {
               className={`${styles.item} ${styles.childItem} ${docNodeId === n.id ? styles.active : ''}`}
               onClick={() => openDoc(n.id)}
             >
-              <span
-                className={styles.dot}
-                style={{ background: TYPE_COLOR[n.type] }}
-              />
+              <span className={styles.dot} style={{ background: TYPE_COLOR[n.type] }} />
               <span>{n.label}</span>
             </div>
           ))}
         </div>
 
         <div className={styles.divider} />
-        <div className={styles.item}><span>📄</span> todos</div>
-        <div className={styles.item}><span>📄</span> demo</div>
+        <div className={styles.item}><span>📝</span>todos</div>
+        <div className={styles.item}><span>🔬</span>demo</div>
       </div>
 
       <footer className={styles.footer}>

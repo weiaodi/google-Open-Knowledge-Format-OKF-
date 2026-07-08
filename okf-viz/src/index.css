@@ -1,45 +1,72 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --color-bg:       #f5f6fa;
-  --color-surface:  #ffffff;
-  --color-border:   #e5e6eb;
-  --color-text:     #1f2329;
-  --color-muted:    #6b7280;
-  --color-subtle:   #9ca3af;
-  --color-primary:  #1456f0;
-  --color-primary-light: #f0f5ff;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --shadow-sm: 0 1px 4px rgba(0,0,0,.07);
-  --shadow-md: 0 4px 16px rgba(0,0,0,.10);
+  /* ── Feishu-aligned color tokens ── */
+  --c-bg:           #f5f6f7;
+  --c-surface:      #ffffff;
+  --c-surface-2:    #f7f8fa;
+  --c-border:       #e0e4ea;
+  --c-border-light: #f0f1f3;
+
+  --c-text-1:  #1f2329;
+  --c-text-2:  #505a66;
+  --c-text-3:  #8f959e;
+  --c-text-4:  #bbbfc4;
+
+  --c-blue:        #336aea;
+  --c-blue-hover:  #2b5fd9;
+  --c-blue-light:  #eef3fe;
+  --c-blue-mid:    #d0e0fb;
+
+  --c-green:   #06a35a;
+  --c-orange:  #e07d22;
+  --c-purple:  #6d50d9;
+
+  /* ── Spacing & radius ── */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  /* ── Shadows ── */
+  --shadow-card:  0 1px 3px rgba(31,35,41,.06), 0 4px 12px rgba(31,35,41,.06);
+  --shadow-popup: 0 4px 12px rgba(31,35,41,.12), 0 1px 3px rgba(31,35,41,.08);
+  --shadow-float: 0 8px 24px rgba(31,35,41,.14);
+
+  /* ── Typography ── */
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font);
   font-size: 14px;
-  color: var(--color-text);
-  background: var(--color-surface);
+  color: var(--c-text-1);
+  background: var(--c-bg);
   height: 100vh;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: #c0c4cc; }
 
-/* syntax highlight (used in code blocks) */
+/* Syntax highlight */
 .kw  { color: #7c3aed; }
-.fn  { color: #1456f0; }
-.str { color: #059669; }
-.cm  { color: #9ca3af; }
+.fn  { color: var(--c-blue); }
+.str { color: var(--c-green); }
+.cm  { color: var(--c-text-4); font-style: italic; }
 
-/* pulse animation for hot nodes */
+/* Pulse animation */
 @keyframes pulse-rect {
-  0%   { opacity: .40; }
-  50%  { opacity: .10; }
-  100% { opacity: .40; }
+  0%   { opacity: .38; }
+  50%  { opacity: .08; }
+  100% { opacity: .38; }
 }
+
+/* Utility */
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

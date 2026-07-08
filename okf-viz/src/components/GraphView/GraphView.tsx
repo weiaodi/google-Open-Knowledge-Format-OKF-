@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useCallback } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { useGraphStore } from '@/store/graphStore'
-import { KGNode, KGLink, EDGE_TYPE_COLOR, EDGE_TYPE_LABEL } from '@/data/js_syntax'
+import { KGNode, KGLink, EDGE_TYPE_COLOR } from '@/data/js_syntax'
 import Timeline from '@/components/Timeline/Timeline'
-import LearningPath from '@/components/LearningPath/LearningPath'
 import styles from './GraphView.module.css'
 
 // ─── Node sizing helpers ──────────────────────────────────────────────────────
@@ -39,13 +38,14 @@ const GraphCanvas: React.FC = () => {
   const svgRef    = useRef<SVGSVGElement>(null)
   const simRef    = useRef<d3.Simulation<SimNode, SimLink> | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
 
   const {
     visibleNodes, visibleLinks, selectedNodeId, connectedIds, connectedLinks,
     selectNode, hoverNode, hoveredNodeId, openDoc,
     nodes: allNodes, links: allLinks,
     filterTypes, toggleFilter, timelineYear,
-    gravityEnabled, toggleGravity,
+    gravityEnabled,
     learningPath,
   } = useGraphStore()
 
@@ -70,7 +70,7 @@ const GraphCanvas: React.FC = () => {
       .attr('id', 'arr').attr('viewBox', '0 -4 8 8')
       .attr('refX', 4).attr('refY', 0)
       .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto')
-      .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#d1d5db')
+      .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#dde2ea')
 
     const edgeTypes = ['depends-on', 'syntactic-sugar', 'used-with', 'param-pattern', 'enables'] as const
     edgeTypes.forEach(et => {
@@ -149,14 +149,9 @@ const GraphCanvas: React.FC = () => {
 
     linkGrp.append('line')
       .attr('class', 'link-line')
-      .attr('stroke', '#d1d5db').attr('stroke-width', 1.4)
-      .attr('marker-end', 'url(#arr)').attr('opacity', .6)
+      .attr('stroke', '#dde2ea').attr('stroke-width', 1.4)
+      .attr('marker-end', 'none').attr('opacity', .5)
 
-    linkGrp.append('text')
-      .attr('class', 'link-label')
-      .attr('font-size', 10).attr('fill', '#9ca3af')
-      .attr('text-anchor', 'middle').attr('opacity', 0)
-      .text(l => EDGE_TYPE_LABEL[l.type])
 
     // ── Node layer ────────────────────────────────────────────────────────
     const nodeG = g.append('g').attr('class', 'nodes')
@@ -222,7 +217,7 @@ const GraphCanvas: React.FC = () => {
       .attr('class', 'node-reads')
       .attr('text-anchor', 'middle')
       .attr('y', n => nodeHalfH(n, maxIn) - 9)
-      .attr('font-size', 9).attr('fill', '#9ca3af')
+      .attr('font-size', 9).attr('fill', '#8f959e')
       .text(n => `📖 ${(n.reads / 1000).toFixed(1)}k`)
 
     // Year badge (shown in timeline mode)
@@ -230,7 +225,7 @@ const GraphCanvas: React.FC = () => {
       .attr('class', 'node-year')
       .attr('text-anchor', 'middle')
       .attr('y', n => -nodeHalfH(n, maxIn) + 10)
-      .attr('font-size', 8).attr('fill', '#b0b7c3').attr('opacity', 0)
+      .attr('font-size', 8).attr('fill', '#bbbfc4').attr('opacity', 0)
       .text(n => `ES${n.year}`)
 
     // ── Tick ──────────────────────────────────────────────────────────────
@@ -238,9 +233,6 @@ const GraphCanvas: React.FC = () => {
       linkGrp.select<SVGLineElement>('.link-line')
         .attr('x1', l => l.source.x).attr('y1', l => l.source.y)
         .attr('x2', l => l.target.x).attr('y2', l => l.target.y)
-      linkGrp.select<SVGTextElement>('.link-label')
-        .attr('x', l => (l.source.x + l.target.x) / 2)
-        .attr('y', l => (l.source.y + l.target.y) / 2 - 6)
       nodeGrp.attr('transform', n => `translate(${n.x},${n.y})`)
 
       const vn = new Set(visibleNodes().map(n => n.id))
@@ -276,8 +268,7 @@ const GraphCanvas: React.FC = () => {
       nodeGrp.selectAll<SVGRectElement, SimNode>('.node-card')
         .attr('opacity', 1).attr('filter', n => `url(#glow-${n.id})`)
       linkGrp.select<SVGLineElement>('.link-line')
-        .attr('opacity', .6).attr('stroke', '#d1d5db').attr('marker-end', 'url(#arr)')
-      linkGrp.select<SVGTextElement>('.link-label').attr('opacity', 0)
+        .attr('opacity', .5).attr('stroke', '#dde2ea')
       return
     }
 
@@ -292,15 +283,9 @@ const GraphCanvas: React.FC = () => {
     linkGrp.select<SVGLineElement>('.link-line')
       .attr('opacity', (l: SimLink) => cSet.has(`${l.source.id}->${l.target.id}`) ? 1 : .08)
       .attr('stroke', (l: SimLink) =>
-        cSet.has(`${l.source.id}->${l.target.id}`) ? EDGE_TYPE_COLOR[l.type] : '#d1d5db')
+        cSet.has(`${l.source.id}->${l.target.id}`) ? EDGE_TYPE_COLOR[l.type] : '#dde2ea')
       .attr('stroke-width', (l: SimLink) =>
         cSet.has(`${l.source.id}->${l.target.id}`) ? 2 : 1.4)
-      .attr('marker-end', (l: SimLink) =>
-        cSet.has(`${l.source.id}->${l.target.id}`) ? `url(#arr-${l.type})` : 'url(#arr)')
-
-    linkGrp.select<SVGTextElement>('.link-label')
-      .attr('opacity', (l: SimLink) => cSet.has(`${l.source.id}->${l.target.id}`) ? 1 : 0)
-      .attr('fill', (l: SimLink) => EDGE_TYPE_COLOR[l.type])
   }, [selectedNodeId, connectedIds, connectedLinks])
 
   // ── Filter/timeline visibility ────────────────────────────────────────────
@@ -389,13 +374,11 @@ const GraphCanvas: React.FC = () => {
     // Highlight path edges
     linkGrp.select<SVGLineElement>('.link-line')
       .attr('stroke', (l: SimLink) =>
-        pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? '#f59e0b' : '#d1d5db')
+        pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? '#f59e0b' : '#dde2ea')
       .attr('stroke-width', (l: SimLink) =>
         pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? 2.5 : 1.4)
       .attr('opacity', (l: SimLink) =>
         pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? 1 : .3)
-      .attr('marker-end', (l: SimLink) =>
-        pathLinkSet.has(`${l.source.id}->${l.target.id}`) ? 'url(#arr-path)' : 'url(#arr)')
 
     // Animate path in sequence using step labels
     const pathSteps = nodeGrp.filter((n: SimNode) => pathSet.has(n.id))
@@ -436,26 +419,22 @@ const GraphCanvas: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [learningPath])
 
-  const resetLayout = useCallback(() => {
-    simRef.current?.alpha(.8).restart()
-  }, [])
 
   const typeKeys = ['JS Syntax', 'JS Builtin', 'JS Pattern'] as const
   const filterColorMap: Record<string, string> = {
-    'JS Syntax':  '#1456f0',
-    'JS Builtin': '#0d8050',
-    'JS Pattern': '#c75000',
+    'JS Syntax':  '#336aea',
+    'JS Builtin': '#06a35a',
+    'JS Pattern': '#e07d22',
   }
 
   return (
     <div className={styles.graphView}>
-      {/* Toolbar */}
+      {/* Toolbar — type filters only */}
       <div className={styles.toolbar}>
-        <span className={styles.title}>🕸 JS 知识图谱</span>
+        <span className={styles.title}>JS 知识图谱</span>
         <span className={styles.badge}>
-          OKF · js_syntax · {visibleNodes().length} nodes
+          {visibleNodes().length} / {allNodes.length} 个概念
         </span>
-
         <div className={styles.filters}>
           {typeKeys.map(t => (
             <button
@@ -468,79 +447,70 @@ const GraphCanvas: React.FC = () => {
             </button>
           ))}
         </div>
-
-        <div className={styles.searchWrap}>
-          <svg className={styles.searchIcon} width="12" height="12" viewBox="0 0 16 16" fill="none">
-            <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5"/>
-            <path d="M11 11l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <input
-            type="text" placeholder="搜索节点…"
-            onChange={e => {
-              const q = e.target.value.trim().toLowerCase()
-              if (!q) { selectNode(null); return }
-              const m = allNodes.find(n =>
-                n.label.toLowerCase().includes(q) || n.tags.some(t => t.toLowerCase().includes(q))
-              )
-              if (m) selectNode(m.id)
-            }}
-          />
-        </div>
-
-        {/* Gravity toggle */}
-        <button
-          className={`${styles.toolBtn} ${gravityEnabled ? styles.toolBtnOn : ''}`}
-          onClick={toggleGravity}
-          title="引力场：悬停节点时相关节点聚拢"
-        >
-          {gravityEnabled ? '⚡ 引力场' : '○ 引力场'}
-        </button>
-
-        {/* Learning path */}
-        <LearningPath />
-
-        <button className={styles.toolBtn} onClick={resetLayout}>重置</button>
       </div>
 
       {/* Canvas */}
-      <div className={styles.canvasWrap} ref={canvasRef} onClick={() => selectNode(null)}>
+      <div
+        className={styles.canvasWrap}
+        ref={canvasRef}
+        onClick={() => selectNode(null)}
+        onMouseMove={e => {
+          const rect = canvasRef.current?.getBoundingClientRect()
+          if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+        }}
+      >
         <svg ref={svgRef} />
-
-        {/* Legend */}
-        <div className={styles.legend}>
-          <div className={styles.legendItem}><span className={styles.legendDot} style={{ background: '#3d9fde' }} />JS Syntax</div>
-          <div className={styles.legendItem}><span className={styles.legendDot} style={{ background: '#52c41a' }} />JS Builtin</div>
-          <div className={styles.legendItem}><span className={styles.legendDot} style={{ background: '#fa8c16' }} />JS Pattern</div>
-          <div className={styles.legendDivider} />
-          <div className={styles.legendItem} style={{ color: '#8a9099' }}>节点大小 = 被引用次数</div>
-          <div className={styles.legendItem} style={{ color: '#8a9099' }}>光晕强度 = 阅读次数</div>
-          {learningPath.length > 0 && (
-            <div className={styles.legendItem} style={{ color: '#f59e0b', fontWeight: 600 }}>
-              <span className={styles.legendDot} style={{ background: '#f59e0b' }} />学习路径
-            </div>
-          )}
-          <div className={styles.legendItem} style={{ color: '#8a9099' }}>双击节点查看文档</div>
-        </div>
 
         <div className={styles.stat}>
           {visibleNodes().length} 节点 · {visibleLinks().length} 关系
           {timelineYear && <span> · ≤ {timelineYear}</span>}
         </div>
 
-        {selectedNodeId && (
-          <div className={styles.edgeHint}>
-            {connectedLinks(selectedNodeId).map((l, i) => (
-              <div key={i} className={styles.edgeHintItem}>
-                <span className={styles.edgeHintDot} style={{ background: EDGE_TYPE_COLOR[l.type] }} />
-                <span className={styles.edgeHintType}>{EDGE_TYPE_LABEL[l.type]}</span>
-                <span className={styles.edgeHintDesc}>{l.description.slice(0, 40)}…</span>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Timeline — floating card top-right */}
         <Timeline />
+
+        {/* Hover tooltip */}
+        {hoveredNodeId && (() => {
+          const n = allNodes.find(x => x.id === hoveredNodeId)
+          if (!n) return null
+          const canvasEl = canvasRef.current
+          if (!canvasEl) return null
+          const canvasW = canvasEl.clientWidth
+          // Flip left if near right edge
+          const flipX = mousePos.x > canvasW - 230
+          return (
+            <div
+              className={styles.tooltip}
+              style={{
+                left:  flipX ? undefined : mousePos.x + 14,
+                right: flipX ? canvasW - mousePos.x + 14 : undefined,
+                top:   mousePos.y - 10,
+              }}
+              onMouseEnter={() => hoverNode(n.id)}
+              onMouseLeave={() => hoverNode(null)}
+            >
+              <div className={styles.ttHeader}>
+                <span className={styles.ttDot} style={{ background: n.color }} />
+                <span className={styles.ttLabel}>{n.label}</span>
+                <span className={styles.ttType} style={{ color: n.color }}>{n.type}</span>
+              </div>
+              <p className={styles.ttDesc}>{n.description}</p>
+              <div className={styles.ttMeta}>
+                <span>📖 {(n.reads / 1000).toFixed(1)}k 阅读</span>
+                <span>🔗 {connectedIds(n.id).size - 1} 个关联</span>
+                <span>⏱ {n.learnMins} 分钟</span>
+              </div>
+              {n.tags.length > 0 && (
+                <div className={styles.ttTags}>
+                  {n.tags.slice(0, 4).map(t => (
+                    <span key={t} className={styles.ttTag}>{t}</span>
+                  ))}
+                </div>
+              )}
+              <div className={styles.ttHint}>点击查看详情 · 双击打开文档</div>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
